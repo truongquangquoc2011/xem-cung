@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: xem-cung-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: singapore
+    plan: free
+    healthCheckPath: /api/time
+    envVars:
+      - key: PORT
+        value: 8080

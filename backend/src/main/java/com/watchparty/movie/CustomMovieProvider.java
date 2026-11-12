@@ -17,14 +17,14 @@ import com.watchparty.movie.MovieModels.MoviePage;
 import com.watchparty.movie.MovieModels.MovieSummary;
 
 /**
- * Nguồn phim VSMOV API (https://vsmov.com/api).
+ * Nguồn phim tùy chỉnh hỗ trợ Nguồn C (https://phim.nguonc.com/api) và VSMOV (https://vsmov.com/api).
  *
  * Bật bằng application.yml:
  * <pre>
  * movies:
  *   provider: custom
  *   custom:
- *     base-url: https://vsmov.com/api
+ *     base-url: https://phim.nguonc.com/api
  * </pre>
  */
 @Component
@@ -33,19 +33,23 @@ public class CustomMovieProvider implements MovieProvider {
 
     private static final Pattern SAFE_SLUG = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]+>");
-    /** Nhận diện link_embed dạng https://v6.streamvsmov.com/video/{hash} */
-    private static final Pattern STREAM_EMBED = Pattern.compile("^(https?://([A-Za-z0-9.-]+))/video/([A-Za-z0-9-]+)$");
+    /** Nhận diện link embed Nguồn C dạng https://embed1.streamc.xyz/embed.php?hash={hash} */
+    private static final Pattern NGUONC_EMBED = Pattern.compile("^https?://([A-Za-z0-9.-]+\\.streamc\\.xyz)/embed\\.php\\?hash=([A-Za-z0-9-]+).*$");
+    /** Nhận diện link_embed VSMOV dạng https://v6.streamvsmov.com/video/{hash} */
+    private static final Pattern VSMOV_EMBED = Pattern.compile("^https?://([A-Za-z0-9.-]+\\.streamvsmov\\.com)/video/([A-Za-z0-9-]+)$");
 
     private final RestClient http;
+    private final boolean isNguonC;
 
     public CustomMovieProvider(@Value("${movies.custom.base-url}") String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalStateException("Chưa điền movies.custom.base-url trong application.yml");
         }
         String cleanBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.isNguonC = cleanBase.contains("nguonc.com");
         this.http = RestClient.builder()
                 .baseUrl(cleanBase)
-                .defaultHeader("User-Agent", "watch-party/1.0")
+                .defaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .build();
     }
 
@@ -55,20 +59,37 @@ public class CustomMovieProvider implements MovieProvider {
         String q = query == null ? "" : query.strip();
 
         JsonNode root;
-        if (q.isEmpty()) {
-            root = http.get()
-                    .uri(b -> b.path("/danh-sach/phim-moi-cap-nhat").queryParam("page", p).build())
-                    .retrieve()
-                    .body(JsonNode.class);
+        if (isNguonC) {
+            if (q.isEmpty()) {
+                root = http.get()
+                        .uri(b -> b.path("/films/phim-moi-cap-nhat").queryParam("page", p).build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } else {
+                root = http.get()
+                        .uri(b -> b.path("/films/search")
+                                .queryParam("keyword", q)
+                                .queryParam("page", p)
+                                .build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            }
         } else {
-            root = http.get()
-                    .uri(b -> b.path("/tim-kiem")
-                            .queryParam("keyword", q)
-                            .queryParam("page", p)
-                            .queryParam("limit", 24)
-                            .build())
-                    .retrieve()
-                    .body(JsonNode.class);
+            if (q.isEmpty()) {
+                root = http.get()
+                        .uri(b -> b.path("/danh-sach/phim-moi-cap-nhat").queryParam("page", p).build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } else {
+                root = http.get()
+                        .uri(b -> b.path("/tim-kiem")
+                                .queryParam("keyword", q)
+                                .queryParam("page", p)
+                                .queryParam("limit", 24)
+                                .build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            }
         }
 
         if (root == null) {
@@ -82,16 +103,28 @@ public class CustomMovieProvider implements MovieProvider {
             if (slug.isEmpty()) {
                 continue;
             }
+            // Bỏ qua các mục chỉ mới có Trailer trên danh sách nếu rõ ràng ghi "Trailer"
+            String currentEp = text(item.path("current_episode"));
+            if ("Trailer".equalsIgnoreCase(currentEp)) {
+                continue;
+            }
             String title = text(item.path("name"));
-            String year = text(item.path("year"));
+            String year = extractYear(item);
             String poster = resolveImage(item, pathImage);
             items.add(new MovieSummary(slug, title, year, poster));
         }
 
-        JsonNode pagination = root.path("pagination");
-        int currentPage = pagination.path("currentPage").asInt(p);
-        int totalPages = Math.max(1, pagination.path("totalPages").asInt(1));
-        return new MoviePage(items, currentPage, totalPages);
+        if (isNguonC) {
+            JsonNode paginate = root.path("paginate");
+            int currentPage = paginate.path("current_page").asInt(p);
+            int totalPages = Math.max(1, paginate.path("total_page").asInt(1));
+            return new MoviePage(items, currentPage, totalPages);
+        } else {
+            JsonNode pagination = root.path("pagination");
+            int currentPage = pagination.path("currentPage").asInt(p);
+            int totalPages = Math.max(1, pagination.path("totalPages").asInt(1));
+            return new MoviePage(items, currentPage, totalPages);
+        }
     }
 
     @Override
@@ -101,11 +134,16 @@ public class CustomMovieProvider implements MovieProvider {
         }
 
         JsonNode root = http.get()
-                .uri("/phim/{slug}", id)
+                .uri(isNguonC ? "/film/{slug}" : "/phim/{slug}", id)
                 .retrieve()
                 .body(JsonNode.class);
 
-        if (root == null || !root.path("status").asBoolean(false)) {
+        if (root == null) {
+            throw new IllegalArgumentException("Không tìm thấy phim");
+        }
+        String statusText = text(root.path("status"));
+        boolean okStatus = root.path("status").asBoolean(false) || "success".equalsIgnoreCase(statusText);
+        if (!okStatus) {
             throw new IllegalArgumentException("Không tìm thấy phim");
         }
 
@@ -115,21 +153,30 @@ public class CustomMovieProvider implements MovieProvider {
         }
 
         String title = text(movie.path("name"));
-        String rawContent = text(movie.path("content"));
-        String description = HTML_TAG.matcher(rawContent).replaceAll("").strip();
-        String year = text(movie.path("year"));
+        String rawDesc = !text(movie.path("description")).isEmpty()
+                ? text(movie.path("description"))
+                : text(movie.path("content"));
+        String description = HTML_TAG.matcher(rawDesc).replaceAll("").strip();
+        String year = extractYear(movie);
         String poster = resolveImage(movie, text(root.path("pathImage")));
 
-        JsonNode servers = root.path("episodes");
+        JsonNode servers = movie.path("episodes").isArray() ? movie.path("episodes") : root.path("episodes");
         int serverCount = servers.isArray() ? servers.size() : 0;
 
         List<Episode> episodes = new ArrayList<>();
         for (JsonNode server : servers) {
             String serverName = text(server.path("server_name")).replaceAll("\\s+", " ").strip();
-            for (JsonNode ep : server.path("server_data")) {
+            JsonNode epList = server.path("items").isArray() ? server.path("items") : server.path("server_data");
+            for (JsonNode ep : epList) {
                 String epName = text(ep.path("name")).strip();
-                String linkM3u8 = text(ep.path("link_m3u8")).strip();
-                String linkEmbed = text(ep.path("link_embed")).strip();
+                String linkM3u8 = text(ep.path("m3u8")).strip();
+                if (linkM3u8.isEmpty()) {
+                    linkM3u8 = text(ep.path("link_m3u8")).strip();
+                }
+                String linkEmbed = text(ep.path("embed")).strip();
+                if (linkEmbed.isEmpty()) {
+                    linkEmbed = text(ep.path("link_embed")).strip();
+                }
 
                 String playUrl = !linkM3u8.isEmpty() ? linkM3u8 : toStreamUrl(linkEmbed);
                 if (playUrl.isEmpty()) {
@@ -145,7 +192,8 @@ public class CustomMovieProvider implements MovieProvider {
     }
 
     /**
-     * Chuyển link_embed của VSMOV (vd: https://v10.streamvsmov.com/video/{hash})
+     * Chuyển link embed của Nguồn C (https://embed*.streamc.xyz/embed.php?hash={hash})
+     * hoặc VSMOV (https://v*.streamvsmov.com/video/{hash})
      * thành link proxy HLS qua backend (/api/movies/hls/{host}/{hash}/master.m3u8)
      * để trình phát HTML5 + hls.js phát trực tiếp không bị chặn CORS và đồng bộ cho cả phòng.
      */
@@ -153,9 +201,13 @@ public class CustomMovieProvider implements MovieProvider {
         if (linkEmbed == null || linkEmbed.isEmpty()) {
             return "";
         }
-        Matcher m = STREAM_EMBED.matcher(linkEmbed);
-        if (m.matches()) {
-            return "/api/movies/hls/" + m.group(2) + "/" + m.group(3) + "/master.m3u8";
+        Matcher nc = NGUONC_EMBED.matcher(linkEmbed);
+        if (nc.matches()) {
+            return "/api/movies/hls/" + nc.group(1) + "/" + nc.group(2) + "/master.m3u8";
+        }
+        Matcher vs = VSMOV_EMBED.matcher(linkEmbed);
+        if (vs.matches()) {
+            return "/api/movies/hls/" + vs.group(1) + "/" + vs.group(2) + "/master.m3u8";
         }
         if (linkEmbed.contains(".m3u8") || linkEmbed.contains(".mp4")) {
             return linkEmbed;
@@ -178,14 +230,34 @@ public class CustomMovieProvider implements MovieProvider {
         return base;
     }
 
+    private static String extractYear(JsonNode item) {
+        String y = text(item.path("year"));
+        if (!y.isEmpty() && !"0".equals(y)) {
+            return y;
+        }
+        // Nguồn C đôi khi để năm trong category["3"].list[0].name hoặc created
+        JsonNode cat3List = item.path("category").path("3").path("list");
+        if (cat3List.isArray() && !cat3List.isEmpty()) {
+            String catYear = text(cat3List.get(0).path("name"));
+            if (!catYear.isEmpty()) {
+                return catYear;
+            }
+        }
+        String created = text(item.path("created"));
+        if (created.length() >= 4 && created.substring(0, 4).matches("\\d{4}")) {
+            return created.substring(0, 4);
+        }
+        return "";
+    }
+
     /**
-     * Lấy ảnh từ poster_url hoặc thumb_url. Một số phim trên VSMOV trả poster_url: {} (object rỗng),
-     * nên chỉ lấy khi node là text hợp lệ.
+     * Lấy ảnh từ poster_url hoặc thumb_url. Hỗ trợ cả ảnh WebP chất lượng cao của Nguồn C.
      */
     private static String resolveImage(JsonNode item, String pathImage) {
-        String poster = text(item.path("poster_url"));
         String thumb = text(item.path("thumb_url"));
-        String chosen = !poster.isEmpty() ? poster : thumb;
+        String poster = text(item.path("poster_url"));
+        // Trên Nguồn C, thumb_url là poster dọc chuẩn tỉ lệ 2:3, còn poster_url là ảnh ngang backdrop
+        String chosen = !thumb.isEmpty() ? thumb : poster;
         if (chosen.isEmpty()) {
             return "";
         }

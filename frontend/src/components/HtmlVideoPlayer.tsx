@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
+import { resolveApiUrl } from '../api';
 import type { PlayerHandle } from '../types';
 import type { PlayerCallbacks } from './VideoPlayer';
 
@@ -32,11 +33,11 @@ export function HtmlVideoPlayer({ url, ...callbacks }: Props) {
     const [, host, hash] = m;
     let cancelled = false;
 
-    fetch(`/api/movies/hls/${encodeURIComponent(host)}/${encodeURIComponent(hash)}/subtitles`)
+    fetch(resolveApiUrl(`/api/movies/hls/${encodeURIComponent(host)}/${encodeURIComponent(hash)}/subtitles`))
       .then((res) => (res.ok ? (res.json() as Promise<SubtitleTrack[]>) : []))
       .then((tracks) => {
         if (!cancelled && Array.isArray(tracks)) {
-          setSubtitles(tracks);
+          setSubtitles(tracks.map((t) => ({ ...t, url: resolveApiUrl(t.url) })));
         }
       })
       .catch(() => {});
@@ -86,8 +87,9 @@ export function HtmlVideoPlayer({ url, ...callbacks }: Props) {
     const video = videoRef.current;
     if (!video) return;
     let hls: Hls | null = null;
+    const playUrl = resolveApiUrl(url);
 
-    const isHls = /\.m3u8(\?|#|$)/i.test(url);
+    const isHls = /\.m3u8(\?|#|$)/i.test(playUrl);
     if (isHls && Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
@@ -115,12 +117,12 @@ export function HtmlVideoPlayer({ url, ...callbacks }: Props) {
           cb.current.onError('Không phát được luồng HLS này.');
         }
       });
-      hls.loadSource(url);
+      hls.loadSource(playUrl);
       hls.attachMedia(video);
     } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url;
+      video.src = playUrl;
     } else {
-      video.src = url;
+      video.src = playUrl;
     }
 
     /** Vị trí máy tự tua tới (để không nhầm là người dùng tua). */

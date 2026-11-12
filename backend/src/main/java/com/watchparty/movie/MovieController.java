@@ -40,7 +40,7 @@ import com.watchparty.movie.MovieModels.MoviePage;
 public class MovieController {
 
     private static final Logger log = LoggerFactory.getLogger(MovieController.class);
-    private static final Pattern SAFE_HOST = Pattern.compile("^v\\d+\\.streamvsmov\\.com$");
+    private static final Pattern SAFE_HOST = Pattern.compile("^(v\\d+\\.streamvsmov\\.com|embed\\d*\\.streamc\\.xyz)$");
     private static final Pattern SAFE_HASH = Pattern.compile("^[A-Za-z0-9-]+$");
     private static final Pattern SEGMENT_URL = Pattern.compile("(?m)^https?://[^\\r\\n]+$");
     private static final Pattern SUBTITLES_JSON = Pattern.compile("subtitles\\s*:\\s*(\\[.*?\\])", Pattern.DOTALL);
@@ -52,12 +52,12 @@ public class MovieController {
     private final RestClient proxyHttp;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** Cache nhỏ giữ các segment gần nhất trong RAM để khi nhiều người trong phòng cùng tải không phải tải lại từ CDN. */
+    /** Cache giữ các segment gần nhất trong RAM để khi nhiều người trong phòng cùng tải không phải tải lại từ CDN. */
     private final Map<String, byte[]> segmentCache = java.util.Collections.synchronizedMap(
-            new LinkedHashMap<String, byte[]>(32, 0.75f, true) {
+            new LinkedHashMap<String, byte[]>(48, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
-                    return size() > 24;
+                    return size() > 36;
                 }
             });
     private final Map<String, String> playlistCache = new ConcurrentHashMap<>();
@@ -75,7 +75,7 @@ public class MovieController {
 
         this.proxyHttp = RestClient.builder()
                 .requestFactory(factory)
-                .defaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .defaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .build();
     }
 
@@ -90,12 +90,16 @@ public class MovieController {
     }
 
     /**
-     * Lấy danh sách phụ đề (.vtt) từ trang embed của VSMOV cho tập phim đang phát.
+     * Lấy danh sách phụ đề (.vtt) từ trang embed cho tập phim đang phát.
+     * Nguồn C (streamc.xyz) đã có sẵn Vietsub cứng (hardsub) trực tiếp trong video nên trả về danh sách rỗng.
      */
     @GetMapping("/hls/{host}/{hash}/subtitles")
     public List<SubtitleTrack> getSubtitles(@PathVariable String host, @PathVariable String hash) {
         if (!SAFE_HOST.matcher(host).matches() || !SAFE_HASH.matcher(hash).matches()) {
             throw new IllegalArgumentException("Tham số không hợp lệ");
+        }
+        if (host.endsWith(".streamc.xyz")) {
+            return List.of();
         }
         String cacheKey = host + "/" + hash;
         List<SubtitleTrack> cached = subtitleCache.get(cacheKey);
@@ -190,7 +194,8 @@ public class MovieController {
     }
 
     /**
-     * Proxy playlist master.m3u8 của VSMOV và viết lại các URL segment để tránh lỗi CORS trên trình duyệt.
+     * Proxy playlist master.m3u8 của Nguồn C (streamc.xyz) hoặc VSMOV (streamvsmov.com)
+     * và viết lại các URL segment để tránh lỗi CORS trên trình duyệt.
      */
     @GetMapping(value = "/hls/{host}/{hash}/master.m3u8", produces = "application/vnd.apple.mpegurl")
     public ResponseEntity<String> proxyMasterPlaylist(@PathVariable String host, @PathVariable String hash) {
@@ -206,11 +211,17 @@ public class MovieController {
                     .body(cached);
         }
 
-        String upstreamUrl = "https://" + host + "/stream/" + hash + "/master.m3u8";
-        String m3u8 = proxyHttp.get()
-                .uri(URI.create(upstreamUrl))
-                .retrieve()
-                .body(String.class);
+        String m3u8;
+        if (host.endsWith(".streamc.xyz")) {
+            m3u8 = fetchNguonCPlaylist(host, hash);
+        } else {
+            String upstreamUrl = "https://" + host + "/stream/" + hash + "/master.m3u8";
+            m3u8 = proxyHttp.get()
+                    .uri(URI.create(upstreamUrl))
+                    .retrieve()
+                    .body(String.class);
+        }
+
         if (m3u8 == null || m3u8.isBlank()) {
             throw new IllegalArgumentException("Không tải được playlist HLS");
         }
@@ -219,7 +230,9 @@ public class MovieController {
         StringBuilder rewritten = new StringBuilder(m3u8.length() + 4096);
         while (m.find()) {
             String segUrl = m.group().strip();
-            String proxied = "/api/movies/hls/segment?url="
+            String proxied = "../segment?host="
+                    + java.net.URLEncoder.encode(host, StandardCharsets.UTF_8)
+                    + "&url="
                     + java.net.URLEncoder.encode(segUrl, StandardCharsets.UTF_8);
             m.appendReplacement(rewritten, Matcher.quoteReplacement(proxied));
         }
@@ -235,10 +248,58 @@ public class MovieController {
     }
 
     /**
-     * Proxy từng segment HLS từ CDN streamvsmov.com về trình duyệt kèm cache RAM và HTTP/2 connection pooling.
+     * Gọi bootstrap API của Nguồn C (embed*.streamc.xyz) để lấy preissued HLS playlist.
+     */
+    private String fetchNguonCPlaylist(String host, String hash) {
+        String embedUrl = "https://" + host + "/embed.php?hash=" + hash;
+        Map<String, Object> bootstrapPayload = Map.of(
+                "action", "bootstrap",
+                "referrer", "https://phim.nguonc.com/",
+                "frame_origins", List.of("https://phim.nguonc.com"),
+                "request_grant", true,
+                "playlist_format", "hls",
+                "pretty_url", true,
+                "path_chunks", true,
+                "bootstrap_format", "json"
+        );
+
+        JsonNode boot = proxyHttp.post()
+                .uri(URI.create(embedUrl))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Origin", "https://" + host)
+                .header("Referer", embedUrl)
+                .body(bootstrapPayload)
+                .retrieve()
+                .body(JsonNode.class);
+
+        if (boot == null) {
+            throw new IllegalArgumentException("Không khởi tạo được luồng phát từ Nguồn C");
+        }
+        String playlistUrl = boot.path("preissued").path("playlist").asText("").strip();
+        if (playlistUrl.isEmpty()) {
+            throw new IllegalArgumentException("Nguồn C không trả về playlist HLS");
+        }
+
+        byte[] playlistBytes = proxyHttp.get()
+                .uri(URI.create(playlistUrl))
+                .header("Origin", "https://" + host)
+                .header("Referer", embedUrl)
+                .retrieve()
+                .body(byte[].class);
+
+        if (playlistBytes == null || playlistBytes.length == 0) {
+            return "";
+        }
+        return new String(playlistBytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Proxy từng segment HLS từ CDN về trình duyệt kèm cache RAM và HTTP/2 connection pooling.
      */
     @GetMapping("/hls/segment")
-    public ResponseEntity<byte[]> proxySegment(@RequestParam String url) {
+    public ResponseEntity<byte[]> proxySegment(
+            @RequestParam String url,
+            @RequestParam(defaultValue = "embed1.streamc.xyz") String host) {
         byte[] cached = segmentCache.get(url);
         if (cached != null) {
             return ResponseEntity.ok()
@@ -253,15 +314,28 @@ public class MovieController {
         } catch (Exception e) {
             throw new IllegalArgumentException("URL segment không hợp lệ");
         }
-        String host = uri.getHost();
-        if (host == null || !host.endsWith(".streamvsmov.com")) {
+        String segHost = uri.getHost();
+        if (segHost == null || (! "https".equalsIgnoreCase(uri.getScheme()) && ! "http".equalsIgnoreCase(uri.getScheme()))) {
+            throw new IllegalArgumentException("Host segment không hợp lệ");
+        }
+        // Chặn truy cập mạng nội bộ (SSRF protection)
+        if ("localhost".equalsIgnoreCase(segHost)
+                || segHost.startsWith("127.")
+                || segHost.startsWith("10.")
+                || segHost.startsWith("192.168.")
+                || segHost.startsWith("169.254.")
+                || "0.0.0.0".equals(segHost)) {
             throw new IllegalArgumentException("Host segment không được phép");
         }
 
+        String originHost = SAFE_HOST.matcher(host).matches()
+                ? (host.endsWith(".streamvsmov.com") ? "v10.streamvsmov.com" : host)
+                : (segHost.endsWith(".streamvsmov.com") ? "v10.streamvsmov.com" : "embed1.streamc.xyz");
+
         byte[] bytes = proxyHttp.get()
                 .uri(uri)
-                .header("Origin", "https://v10.streamvsmov.com")
-                .header("Referer", "https://v10.streamvsmov.com/")
+                .header("Origin", "https://" + originHost)
+                .header("Referer", "https://" + originHost + "/")
                 .retrieve()
                 .body(byte[].class);
 

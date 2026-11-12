@@ -1,7 +1,16 @@
 import type { MovieDetail, MoviePage } from './types';
 
-/** Để trống khi chạy dev (Vite proxy). Khi deploy tách domain: VITE_API_URL=https://api.example.com */
-const API_BASE: string = import.meta.env.VITE_API_URL ?? '';
+/** Để trống khi chạy dev (Vite proxy) hoặc khi đóng gói chung 1 container. Khi deploy tách domain: VITE_API_URL=https://api.example.com */
+export const API_BASE: string = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+
+/** Gắn API_BASE vào đường dẫn tương đối (/api/...) khi deploy tách domain. */
+export function resolveApiUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith('/api/') && API_BASE) {
+    return API_BASE + url;
+  }
+  return url;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + path, init);
