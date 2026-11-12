@@ -55,6 +55,8 @@ export function YouTubePlayer({ videoId, ...callbacks }: Props) {
     return () => {
       cancelled = true;
       player?.destroy();
+      // Đặt về null để handle cũ (nếu còn ai giữ) thành no-op, tránh gọi seekTo vào player đã huỷ -> sập trang
+      player = null;
       if (host) host.innerHTML = '';
     };
   }, [videoId]);

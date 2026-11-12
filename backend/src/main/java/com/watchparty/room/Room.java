@@ -127,8 +127,8 @@ public class Room {
                 }
             }
             case "video" -> {
-                if (!(url.startsWith("https://") || url.startsWith("http://"))) {
-                    throw new IllegalArgumentException("Link video phải bắt đầu bằng http(s)://");
+                if (!(url.startsWith("https://") || url.startsWith("http://") || url.startsWith("/api/"))) {
+                    throw new IllegalArgumentException("Link video phải bắt đầu bằng http(s):// hoặc /api/");
                 }
             }
             default -> throw new IllegalArgumentException("Loại nguồn không hỗ trợ: " + s.type());

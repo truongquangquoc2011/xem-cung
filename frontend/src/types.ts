@@ -81,4 +81,6 @@ export interface PlayerHandle {
   seek(seconds: number): void;
   getTime(): number;
   isPlaying(): boolean;
+  /** Đang tua dở (chờ tải đoạn mới). Lúc này không được tự kéo về giờ phòng. */
+  isSeeking?(): boolean;
 }

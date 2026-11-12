@@ -6,7 +6,8 @@ export interface PlayerCallbacks {
   onReady(handle: PlayerHandle): void;
   onPlay(time: number): void;
   onPause(time: number): void;
-  onSeek(time: number): void;
+  /** byUser = true khi chắc chắn do người dùng kéo thanh tua (không phải máy tự tua). */
+  onSeek(time: number, byUser?: boolean): void;
   onError(message: string): void;
   /** Trình duyệt chặn tự phát (cần người dùng bấm). */
   onBlocked?(): void;
