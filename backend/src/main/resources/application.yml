@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  jackson:
+    default-property-inclusion: non_null
+
+app:
+  # Origin được phép gọi REST/WebSocket. Khi deploy nên đổi thành domain frontend thật.
+  allowed-origins: "*"
+
+movies:
+  # Nguồn phim dùng cho "Kho phim":
+  #   archive -> Internet Archive (phim public domain, dùng mặc định để demo)
+  #   custom  -> API phim của bạn (điền base-url bên dưới, xem CustomMovieProvider.java)
+  provider: archive
+  custom:
+    # ===== Ô GÁN API PHIM CỦA BẠN =====
+    base-url: ""

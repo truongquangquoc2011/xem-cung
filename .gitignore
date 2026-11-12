@@ -1,0 +1,9 @@
+backend/target/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.claude/
+.idea/
+.vscode/
+*.iml
+.env.local

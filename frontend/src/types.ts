@@ -1,0 +1,84 @@
+export type SourceType = 'youtube' | 'video';
+
+/** type = youtube: url là videoId. type = video: url là link mp4 / m3u8. */
+export interface VideoSource {
+  type: SourceType;
+  url: string;
+  title: string;
+}
+
+export interface PlaybackState {
+  source?: VideoSource;
+  playing: boolean;
+  position: number;
+  updatedAt: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  type: 'USER' | 'SYSTEM';
+  user?: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface Member {
+  id: string;
+  name: string;
+}
+
+export interface RoomEvent {
+  type: 'STATE' | 'CHAT' | 'MEMBERS';
+  state?: PlaybackState;
+  message?: ChatMessage;
+  members?: Member[];
+  by?: string;
+  serverTime: number;
+}
+
+export interface RoomSnapshot {
+  roomId: string;
+  you: string;
+  state: PlaybackState;
+  chat: ChatMessage[];
+  members: Member[];
+  serverTime: number;
+}
+
+export type ControlAction = 'play' | 'pause' | 'seek' | 'load';
+
+export interface MovieSummary {
+  id: string;
+  title: string;
+  year?: string;
+  poster?: string;
+}
+
+export interface MoviePage {
+  items: MovieSummary[];
+  page: number;
+  totalPages: number;
+}
+
+export interface Episode {
+  name: string;
+  url: string;
+}
+
+export interface MovieDetail {
+  id: string;
+  title: string;
+  description?: string;
+  year?: string;
+  poster?: string;
+  episodes: Episode[];
+}
+
+/** Điều khiển chung cho cả trình phát YouTube và <video>. */
+export interface PlayerHandle {
+  play(): void;
+  pause(): void;
+  seek(seconds: number): void;
+  getTime(): number;
+  isPlaying(): boolean;
+}
