@@ -230,7 +230,7 @@ public class MovieController {
         StringBuilder rewritten = new StringBuilder(m3u8.length() + 4096);
         while (m.find()) {
             String segUrl = m.group().strip();
-            String proxied = "../segment?host="
+            String proxied = "../../segment?host="
                     + java.net.URLEncoder.encode(host, StandardCharsets.UTF_8)
                     + "&url="
                     + java.net.URLEncoder.encode(segUrl, StandardCharsets.UTF_8);
@@ -296,7 +296,7 @@ public class MovieController {
     /**
      * Proxy từng segment HLS từ CDN về trình duyệt kèm cache RAM và HTTP/2 connection pooling.
      */
-    @GetMapping("/hls/segment")
+    @GetMapping({"/hls/segment", "/hls/{pathHost}/segment"})
     public ResponseEntity<byte[]> proxySegment(
             @RequestParam String url,
             @RequestParam(defaultValue = "embed1.streamc.xyz") String host) {
