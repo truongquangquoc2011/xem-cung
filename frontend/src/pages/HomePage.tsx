@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Logo } from '../components/Logo';
 import { PosterRow } from '../components/PosterRow';
-import type { MovieSummary, VideoSource } from '../types';
-import { loadName, saveName } from '../utils';
+import { HOT_PERIODS, MOVIE_CATEGORIES, type HotPeriod } from '../constants/movies';
+import type { MovieDetail, MoviePage, MovieSummary, VideoSource } from '../types';
+import { loadName, saveName, toVideoSource } from '../utils';
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -17,15 +18,115 @@ export function HomePage() {
   const [more, setMore] = useState<MovieSummary[]>([]);
   const [scrolled, setScrolled] = useState(false);
 
+  // Tìm kiếm & lọc thể loại ngay trên trang chủ
+  const [searchInput, setSearchInput] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [browsePage, setBrowsePage] = useState(1);
+  const [browseData, setBrowseData] = useState<MoviePage | null>(null);
+  const [browseLoading, setBrowseLoading] = useState(false);
+
+  // Phim hot theo thời gian (today / week / month)
+  const [hotPeriod, setHotPeriod] = useState<HotPeriod>('today');
+  const [hotItems, setHotItems] = useState<MovieSummary[]>([]);
+  const [hotLoading, setHotLoading] = useState(false);
+
+  // Chọn tập cho phim nhiều tập trước khi tạo phòng
+  const [pickedDetail, setPickedDetail] = useState<MovieDetail | null>(null);
+  const [epFilter, setEpFilter] = useState('');
+
+  // Hero carousel ưu tiên phim Việt Nam & Anime nổi bật
+  interface HeroSlide {
+    movie: MovieSummary;
+    tag: 'viet-nam' | 'hoat-hinh';
+    tagLabel: string;
+  }
+  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([]);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
+  const [heroDetails, setHeroDetails] = useState<Record<string, MovieDetail>>({});
+
   useEffect(() => {
     api.searchMovies('', 1).then((p) => setPopular(p.items)).catch(() => {});
     api.searchMovies('', 2).then((p) => setMore(p.items)).catch(() => {});
+    Promise.allSettled([
+      api.searchMovies('', 1, 'viet-nam', ''),
+      api.searchMovies('', 1, 'hoat-hinh', ''),
+    ]).then(([vnRes, animeRes]) => {
+      const vnList = vnRes.status === 'fulfilled' ? vnRes.value.items.slice(0, 3) : [];
+      const animeList = animeRes.status === 'fulfilled' ? animeRes.value.items.slice(0, 3) : [];
+      const combined: HeroSlide[] = [];
+      const maxLen = Math.max(vnList.length, animeList.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (vnList[i]) combined.push({ movie: vnList[i], tag: 'viet-nam', tagLabel: 'Phim Việt Nam' });
+        if (animeList[i]) combined.push({ movie: animeList[i], tag: 'hoat-hinh', tagLabel: 'Anime Nổi Bật' });
+      }
+      setHeroSlides(combined);
+      combined.forEach((slide) => {
+        api
+          .movieDetail(slide.movie.id)
+          .then((d) => setHeroDetails((prev) => ({ ...prev, [slide.movie.id]: d })))
+          .catch(() => {});
+      });
+    });
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const featured = popular[0];
+  useEffect(() => {
+    if (heroSlides.length <= 1 || heroPaused) return;
+    const timer = window.setInterval(() => {
+      setHeroIndex((i) => (i + 1) % heroSlides.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [heroSlides.length, heroPaused]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHotLoading(true);
+    api
+      .searchMovies('', 1, '', hotPeriod)
+      .then((p) => {
+        if (!cancelled) setHotItems(p.items);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setHotLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hotPeriod]);
+
+  const isBrowsing = submittedQuery !== '' || selectedCategory !== '';
+
+  useEffect(() => {
+    if (!isBrowsing) {
+      setBrowseData(null);
+      return;
+    }
+    let cancelled = false;
+    setBrowseLoading(true);
+    api
+      .searchMovies(submittedQuery, browsePage, selectedCategory, '')
+      .then((p) => {
+        if (!cancelled) setBrowseData(p);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setBrowseLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isBrowsing, submittedQuery, selectedCategory, browsePage]);
+
+  const activeSlide = heroSlides[heroIndex] ?? (popular[0] ? { movie: popular[0], tag: 'hoat-hinh' as const, tagLabel: 'Nổi bật' } : null);
+  const activeDetail = activeSlide ? heroDetails[activeSlide.movie.id] : undefined;
+  const heroBg = activeSlide?.movie.backdrop || activeSlide?.movie.poster;
 
   const requireName = () => {
     const n = name.trim();
@@ -39,31 +140,40 @@ export function HomePage() {
     return n;
   };
 
-  const createRoom = async (busyKey: string, initialSource?: VideoSource) => {
+  const createRoom = async (
+    busyKey: string,
+    initialSource?: VideoSource,
+    initialMovieDetail?: MovieDetail,
+  ) => {
     const n = requireName();
     if (!n) return;
     setBusy(busyKey);
     setError(null);
     try {
       const { id } = await api.createRoom();
-      navigate(`/room/${id}`, { state: { name: n, initialSource } });
+      navigate(`/room/${id}`, { state: { name: n, initialSource, initialMovieDetail } });
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
     }
   };
 
-  /** Chọn phim -> tạo phòng và chiếu luôn tập đầu. */
+  /** Chọn phim -> nếu có 1 tập chiếu luôn, nếu nhiều tập thì mở bảng chọn tập trước khi vào phòng. */
   const watchMovie = async (m: MovieSummary) => {
     if (!requireName()) return;
     setBusy(m.id);
     setError(null);
     try {
       const d = await api.movieDetail(m.id);
-      const ep = d.episodes[0];
-      if (!ep) throw new Error('Phim này chưa có bản phát được.');
-      const title = d.episodes.length > 1 ? `${d.title} · ${ep.name}` : d.title;
-      await createRoom(m.id, { type: 'video', url: ep.url, title });
+      if (d.episodes.length === 0) throw new Error('Phim này chưa có bản phát được.');
+      if (d.episodes.length === 1) {
+        const ep = d.episodes[0];
+        await createRoom(m.id, toVideoSource(ep.url, d.title), d);
+        return;
+      }
+      setEpFilter('');
+      setPickedDetail(d);
+      setBusy(null);
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
@@ -87,6 +197,27 @@ export function HomePage() {
     }
   };
 
+  const submitHomeSearch = (e: FormEvent) => {
+    e.preventDefault();
+    const q = searchInput.trim();
+    setSelectedCategory('');
+    setBrowsePage(1);
+    setSubmittedQuery(q);
+  };
+
+  const selectHomeCategory = (slug: string) => {
+    setSubmittedQuery('');
+    setSearchInput('');
+    setBrowsePage(1);
+    setSelectedCategory(slug);
+  };
+
+  const filteredEpisodes = pickedDetail
+    ? pickedDetail.episodes.filter((ep) =>
+        epFilter.trim() ? ep.name.toLowerCase().includes(epFilter.trim().toLowerCase()) : true,
+      )
+    : [];
+
   return (
     <div className="home">
       <nav className={`topnav ${scrolled ? 'solid' : ''}`}>
@@ -104,29 +235,87 @@ export function HomePage() {
         </form>
       </nav>
 
-      <header className="hero">
+      <header
+        className="hero hero-cinema"
+        onMouseEnter={() => setHeroPaused(true)}
+        onMouseLeave={() => setHeroPaused(false)}
+      >
         <div
+          key={activeSlide?.movie.id ?? 'default'}
           className="hero-backdrop"
-          style={featured?.poster ? { backgroundImage: `url(${featured.poster})` } : undefined}
+          style={heroBg ? { backgroundImage: `url(${heroBg})` } : undefined}
           aria-hidden="true"
         />
         <div className="hero-shade" aria-hidden="true" />
 
-        <div className="hero-content">
-          <p className="kicker">
-            <span className="live-dot" /> Phòng chiếu online
-          </p>
-          <h1 className="hero-title">
-            Xem phim cùng nhau,
-            <br />
-            <em>dù ở xa.</em>
+        <div className="hero-content hero-cinema-content">
+          <div className="hero-badges">
+            {activeSlide?.tag === 'viet-nam' ? (
+              <span className="hero-badge vn">★ {activeSlide.tagLabel}</span>
+            ) : (
+              <span className="hero-badge anime">✦ {activeSlide?.tagLabel ?? 'Phòng chiếu online'}</span>
+            )}
+            <span className="kicker">
+              <span className="live-dot" /> Xem chung đồng bộ
+            </span>
+          </div>
+
+          <h1 className="hero-movie-title">
+            {activeSlide?.movie.title ?? (
+              <>
+                Xem phim cùng nhau, <em>dù ở xa.</em>
+              </>
+            )}
           </h1>
-          <p className="hero-lead">
-            Tạo phòng, gửi link cho bạn bè. Ai bấm dừng hay tua, cả phòng cùng theo. Vừa xem vừa trò chuyện như ngồi
-            chung một rạp.
+
+          {activeSlide && (
+            <p className="hero-meta">
+              {[
+                activeSlide.movie.year,
+                activeSlide.movie.currentEpisode || (activeDetail?.episodes.length ? `${activeDetail.episodes.length} tập` : ''),
+                activeSlide.movie.quality,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+
+          <p className="hero-desc">
+            {activeDetail?.description ||
+              'Tạo phòng, gửi link cho bạn bè. Ai bấm dừng hay tua, cả phòng cùng theo. Vừa xem vừa trò chuyện như ngồi chung một rạp.'}
           </p>
 
-          <div className="hero-form">
+          <div className="hero-actions">
+            {activeSlide && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-play-hero"
+                  disabled={!!busy}
+                  onClick={() => watchMovie(activeSlide.movie)}
+                >
+                  <span aria-hidden="true">▶</span> {busy === activeSlide.movie.id ? 'Đang mở…' : 'Phát ngay'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-info-hero"
+                  disabled={!!busy}
+                  onClick={async () => {
+                    if (activeDetail) {
+                      setEpFilter('');
+                      setPickedDetail(activeDetail);
+                    } else {
+                      await watchMovie(activeSlide.movie);
+                    }
+                  }}
+                >
+                  ⓘ Thông tin &amp; Tập
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="hero-room-bar">
             <input
               ref={nameRef}
               value={name}
@@ -134,29 +323,187 @@ export function HomePage() {
                 setName(e.target.value);
                 setError(null);
               }}
-              placeholder="Tên của bạn"
+              placeholder="Tên của bạn…"
               maxLength={30}
               aria-label="Tên của bạn"
             />
-            <button className="btn btn-primary btn-lg" onClick={() => createRoom('create')} disabled={!!busy}>
-              <span aria-hidden="true">▶</span> {busy === 'create' ? 'Đang tạo…' : 'Tạo phòng chiếu'}
+            <button className="btn btn-primary" onClick={() => createRoom('create')} disabled={!!busy}>
+              + {busy === 'create' ? 'Đang tạo…' : 'Tạo phòng trống'}
             </button>
           </div>
           {error && <p className="error-text">{error}</p>}
-
-          {featured && (
-            <button className="featured-chip" onClick={() => watchMovie(featured)} disabled={!!busy}>
-              <span className="chip-label">Nổi bật</span>
-              <span className="chip-title">{featured.title}</span>
-              <span className="chip-cta">{busy === featured.id ? 'Đang mở…' : 'Xem cùng bạn bè →'}</span>
-            </button>
-          )}
         </div>
+
+        {heroSlides.length > 1 && (
+          <div className="hero-switcher" aria-label="Chọn phim nổi bật trên banner">
+            <div className="hero-thumbs">
+              {heroSlides.map((slide, idx) => (
+                <button
+                  key={slide.movie.id}
+                  type="button"
+                  className={`hero-thumb ${idx === heroIndex ? 'active' : ''}`}
+                  onClick={() => setHeroIndex(idx)}
+                  title={slide.movie.title}
+                >
+                  {slide.movie.poster && <img src={slide.movie.poster} alt={slide.movie.title} />}
+                  <span className={`hero-thumb-dot ${slide.tag === 'viet-nam' ? 'vn' : ''}`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="home-rows">
-        <PosterRow title="Phổ biến trong kho phim" items={popular} busyId={busy} onPick={watchMovie} />
-        <PosterRow title="Phim kinh điển" items={more} busyId={busy} onPick={watchMovie} />
+        <section className="home-discover" aria-label="Tìm kiếm và lọc phim">
+          <div className="discover-head">
+            <h2 className="row-title">Khám phá kho phim</h2>
+            <form className="discover-search" onSubmit={submitHomeSearch}>
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Tìm tên phim, anime, phim bộ…"
+                aria-label="Tìm tên phim"
+              />
+              <button className="btn btn-primary" type="submit">
+                Tìm kiếm
+              </button>
+              {isBrowsing && (
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('');
+                    setSubmittedQuery('');
+                    setSelectedCategory('');
+                    setBrowsePage(1);
+                  }}
+                >
+                  Xoá lọc
+                </button>
+              )}
+            </form>
+          </div>
+
+          <div className="discover-pills" role="tablist" aria-label="Lọc theo thể loại">
+            {MOVIE_CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.slug && !submittedQuery;
+              return (
+                <button
+                  key={cat.slug || 'all'}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  className={`filter-pill ${cat.featured ? 'vn-featured' : ''} ${cat.aiFeatured ? 'ai-featured' : ''} ${isSelected ? 'active' : ''}`}
+                  onClick={() => selectHomeCategory(cat.slug)}
+                >
+                  {cat.featured && (
+                    <span className="vn-emblem" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" className="vn-star">
+                        <path
+                          fill="currentColor"
+                          d="M12 2.2l2.92 6.08 6.68.92-4.86 4.68 1.18 6.64L12 17.34l-5.92 3.18 1.18-6.64L2.4 9.2l6.68-.92L12 2.2z"
+                        />
+                      </svg>
+                    </span>
+                  )}
+                  {cat.aiFeatured && (
+                    <span className="ai-sparkle" aria-hidden="true">
+                      ✦
+                    </span>
+                  )}
+                  <span>{cat.label}</span>
+                  {cat.badge && <span className="pill-badge-new">{cat.badge}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {isBrowsing && (
+            <div className="discover-results">
+              {browseLoading && <div className="spinner" aria-label="Đang tải" />}
+              {!browseLoading && browseData && (
+                <>
+                  {browseData.items.length === 0 ? (
+                    <p className="muted">Không tìm thấy phim phù hợp.</p>
+                  ) : (
+                    <div className="movie-grid home-grid">
+                      {browseData.items.map((m) => (
+                        <button
+                          key={m.id}
+                          className="movie-card"
+                          onClick={() => watchMovie(m)}
+                          disabled={!!busy}
+                        >
+                          <div className="poster-wrap">
+                            {m.poster && <img src={m.poster} alt="" loading="lazy" />}
+                            {m.currentEpisode && <span className="ep-badge">{m.currentEpisode}</span>}
+                            <span className="poster-play" aria-hidden="true">
+                              {busy === m.id ? '…' : '▶'}
+                            </span>
+                          </div>
+                          <span className="movie-title">{m.title}</span>
+                          <span className="muted small">{[m.year, m.quality].filter(Boolean).join(' · ')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {browseData.totalPages > 1 && (
+                    <div className="pager">
+                      <button
+                        className="btn btn-ghost"
+                        disabled={browsePage <= 1}
+                        onClick={() => setBrowsePage((p) => p - 1)}
+                      >
+                        ← Trước
+                      </button>
+                      <span className="muted">
+                        Trang {browseData.page}/{browseData.totalPages}
+                      </span>
+                      <button
+                        className="btn btn-ghost"
+                        disabled={browsePage >= browseData.totalPages}
+                        onClick={() => setBrowsePage((p) => p + 1)}
+                      >
+                        Sau →
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="hot-section">
+          <div className="hot-header">
+            <h2 className="row-title">🔥 Phim đang Hot theo thời gian</h2>
+            <div className="hot-tabs" role="tablist" aria-label="Bảng xếp hạng theo thời gian">
+              {HOT_PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={hotPeriod === p.key}
+                  className={`filter-pill hot ${hotPeriod === p.key ? 'active' : ''}`}
+                  onClick={() => setHotPeriod(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <PosterRow
+            title=""
+            items={hotLoading ? [] : hotItems}
+            busyId={busy}
+            ranked
+            onPick={watchMovie}
+          />
+        </section>
+
+        <PosterRow title="Mới cập nhật trong kho" items={popular} busyId={busy} onPick={watchMovie} />
+        <PosterRow title="Đề xuất xem chung" items={more} busyId={busy} onPick={watchMovie} />
 
         <section className="how">
           <h2 className="row-title">Cách hoạt động</h2>
@@ -179,6 +526,69 @@ export function HomePage() {
           </ol>
         </section>
       </main>
+
+      {pickedDetail && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => e.target === e.currentTarget && setPickedDetail(null)}
+        >
+          <div className="modal" role="dialog" aria-modal="true" aria-label={pickedDetail.title}>
+            <header className="modal-head">
+              <h2>Chọn tập để mở phòng</h2>
+              <button className="btn btn-ghost icon" onClick={() => setPickedDetail(null)} aria-label="Đóng">
+                ✕
+              </button>
+            </header>
+            <div className="modal-body">
+              <div className="movie-detail">
+                {pickedDetail.poster && (
+                  <div
+                    className="detail-backdrop"
+                    style={{ backgroundImage: `url(${pickedDetail.poster})` }}
+                    aria-hidden="true"
+                  />
+                )}
+                {pickedDetail.poster && <img src={pickedDetail.poster} alt="" className="detail-poster" />}
+                <div className="detail-info">
+                  <h3>{pickedDetail.title}</h3>
+                  {pickedDetail.year && <p className="muted">{pickedDetail.year}</p>}
+                  {pickedDetail.description && <p className="detail-desc">{pickedDetail.description}</p>}
+                  <div className="ep-head-row">
+                    <h4>Chọn tập ({pickedDetail.episodes.length} tập)</h4>
+                    {pickedDetail.episodes.length > 8 && (
+                      <input
+                        className="ep-filter-input"
+                        value={epFilter}
+                        onChange={(e) => setEpFilter(e.target.value)}
+                        placeholder="Lọc số tập…"
+                        aria-label="Lọc nhanh số tập"
+                      />
+                    )}
+                  </div>
+                  <div className="episode-list">
+                    {filteredEpisodes.map((ep) => (
+                      <button
+                        key={`${ep.name}-${ep.url}`}
+                        className="btn btn-secondary"
+                        disabled={!!busy}
+                        onClick={() =>
+                          void createRoom(
+                            pickedDetail.id,
+                            toVideoSource(ep.url, `${pickedDetail.title} · ${ep.name}`),
+                            pickedDetail,
+                          )
+                        }
+                      >
+                        ▶ {ep.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="footer">
         <Logo />

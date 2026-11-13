@@ -32,8 +32,10 @@ import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.watchparty.movie.AniSkipService.SkipSegment;
 import com.watchparty.movie.MovieModels.MovieDetail;
 import com.watchparty.movie.MovieModels.MoviePage;
+import com.watchparty.movie.MovieModels.MovieSummary;
 
 @RestController
 @RequestMapping("/api/movies")
@@ -49,6 +51,8 @@ public class MovieController {
     }
 
     private final MovieProvider provider;
+    private final AniSkipService aniSkipService;
+    private final YouTubeAiMovieService youTubeAiMovieService;
     private final RestClient proxyHttp;
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -63,8 +67,11 @@ public class MovieController {
     private final Map<String, String> playlistCache = new ConcurrentHashMap<>();
     private final Map<String, List<SubtitleTrack>> subtitleCache = new ConcurrentHashMap<>();
 
-    public MovieController(MovieProvider provider) {
+    public MovieController(MovieProvider provider, AniSkipService aniSkipService,
+                           YouTubeAiMovieService youTubeAiMovieService) {
         this.provider = provider;
+        this.aniSkipService = aniSkipService;
+        this.youTubeAiMovieService = youTubeAiMovieService;
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -80,13 +87,73 @@ public class MovieController {
     }
 
     @GetMapping
-    public MoviePage search(@RequestParam(defaultValue = "") String q, @RequestParam(defaultValue = "1") int page) {
-        return provider.search(q, page);
+    public MoviePage search(
+            @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "") String category,
+            @RequestParam(defaultValue = "") String period,
+            @RequestParam(defaultValue = "1") int page) {
+        String cleanQ = q == null ? "" : q.strip();
+        String cleanCat = category == null ? "" : category.strip().toLowerCase();
+
+        // Khi bấm tag Phim AI (không có từ khoá): gộp Nguồn C (phim-ai) + Phim AI trên YouTube
+        if ("phim-ai".equals(cleanCat) && cleanQ.isEmpty()) {
+            MoviePage base = page == 1
+                    ? provider.search("", "phim-ai", period, 1)
+                    : new MoviePage(List.of(), page, 1);
+            if (page == 1) {
+                List<MovieSummary> combined = new ArrayList<>(base.items());
+                combined.addAll(youTubeAiMovieService.listDefaultAiMovies());
+                return new MoviePage(combined, 1, 1);
+            }
+            return base;
+        }
+
+        // Tìm kiếm trong Kho phim: chỉ tìm từ nguồn phim (Nguồn C)
+        return provider.search(cleanQ, cleanCat, period, page);
+    }
+
+    /** Tìm kiếm video trực tiếp trên YouTube (dùng cho tab YouTube trong phòng). */
+    @GetMapping("/youtube")
+    public MoviePage searchYouTube(@RequestParam(defaultValue = "") String q) {
+        String cleanQ = q == null ? "" : q.strip();
+        if (cleanQ.isEmpty()) {
+            return new MoviePage(List.of(), 1, 1);
+        }
+        return new MoviePage(youTubeAiMovieService.search(cleanQ, 12), 1, 1);
+    }
+
+    /** Kho & tìm kiếm dành riêng cho Phim AI (Nguồn C phim-ai + YouTube gán mác Phim AI). */
+    @GetMapping("/ai")
+    public MoviePage searchAi(@RequestParam(defaultValue = "") String q) {
+        String cleanQ = q == null ? "" : q.strip();
+        if (cleanQ.isEmpty()) {
+            MoviePage base = provider.search("", "phim-ai", "", 1);
+            List<MovieSummary> combined = new ArrayList<>(base.items());
+            combined.addAll(youTubeAiMovieService.listDefaultAiMovies());
+            return new MoviePage(combined, 1, 1);
+        }
+        String ytQuery = cleanQ.toLowerCase().contains("ai") ? cleanQ : cleanQ + " phim AI";
+        List<MovieSummary> ytItems = youTubeAiMovieService.search(ytQuery, 12).stream()
+                .map(m -> new MovieSummary(m.id(), m.title(), "Phim AI", m.poster(),
+                        m.currentEpisode(), m.quality(), m.backdrop()))
+                .toList();
+        return new MoviePage(ytItems, 1, 1);
     }
 
     @GetMapping("/{id}")
     public MovieDetail detail(@PathVariable String id) {
+        if (youTubeAiMovieService.isYouTubeMovieId(id)) {
+            return youTubeAiMovieService.detail(id);
+        }
         return provider.detail(id);
+    }
+
+    @GetMapping("/skip-times")
+    public List<SkipSegment> skipTimes(
+            @RequestParam(defaultValue = "") String title,
+            @RequestParam(defaultValue = "") String originalTitle,
+            @RequestParam(defaultValue = "1") String episode) {
+        return aniSkipService.findSkipTimes(title, originalTitle, episode);
     }
 
     /**

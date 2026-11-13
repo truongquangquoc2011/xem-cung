@@ -12,5 +12,9 @@ public interface MovieProvider {
     /** query rỗng = danh sách mặc định (phổ biến / mới). page bắt đầu từ 1. */
     MoviePage search(String query, int page);
 
+    default MoviePage search(String query, String category, String period, int page) {
+        return search(query, page);
+    }
+
     MovieDetail detail(String id);
 }

@@ -2,6 +2,7 @@ package com.watchparty.movie;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,6 +34,8 @@ public class CustomMovieProvider implements MovieProvider {
 
     private static final Pattern SAFE_SLUG = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]+>");
+    private static final Set<String> LIST_SLUGS = Set.of("phim-le", "phim-bo", "hoat-hinh", "tv-shows", "phim-dang-chieu");
+    private static final Set<String> COUNTRY_SLUGS = Set.of("han-quoc", "trung-quoc", "nhat-ban", "au-my", "thai-lan", "viet-nam", "dai-loan", "hong-kong");
     /** Nhận diện link embed Nguồn C dạng https://embed1.streamc.xyz/embed.php?hash={hash} */
     private static final Pattern NGUONC_EMBED = Pattern.compile("^https?://([A-Za-z0-9.-]+\\.streamc\\.xyz)/embed\\.php\\?hash=([A-Za-z0-9-]+).*$");
     /** Nhận diện link_embed VSMOV dạng https://v6.streamvsmov.com/video/{hash} */
@@ -55,45 +58,66 @@ public class CustomMovieProvider implements MovieProvider {
 
     @Override
     public MoviePage search(String query, int page) {
+        return search(query, "", "", page);
+    }
+
+    @Override
+    public MoviePage search(String query, String category, String period, int page) {
         int p = Math.max(1, page);
         String q = query == null ? "" : query.strip();
+        String cat = category == null ? "" : category.strip().toLowerCase();
+        String per = period == null ? "" : period.strip().toLowerCase();
 
+        // Chế độ Hot theo thời gian (today / week / month) khi chưa nhập từ khoá tìm kiếm
+        if (q.isEmpty() && cat.isEmpty() && !per.isEmpty()) {
+            int offsetPage = switch (per) {
+                case "today" -> p;
+                case "week" -> p + 1;
+                case "month" -> p + 2;
+                default -> p;
+            };
+            p = offsetPage;
+        }
+
+        final int targetPage = p;
         JsonNode root;
         if (isNguonC) {
-            if (q.isEmpty()) {
-                root = http.get()
-                        .uri(b -> b.path("/films/phim-moi-cap-nhat").queryParam("page", p).build())
-                        .retrieve()
-                        .body(JsonNode.class);
-            } else {
+            if (!q.isEmpty()) {
                 root = http.get()
                         .uri(b -> b.path("/films/search")
                                 .queryParam("keyword", q)
-                                .queryParam("page", p)
+                                .queryParam("page", targetPage)
                                 .build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } else {
+                String path = resolveNguonCPath(cat);
+                root = http.get()
+                        .uri(b -> b.path(path).queryParam("page", targetPage).build())
                         .retrieve()
                         .body(JsonNode.class);
             }
         } else {
-            if (q.isEmpty()) {
-                root = http.get()
-                        .uri(b -> b.path("/danh-sach/phim-moi-cap-nhat").queryParam("page", p).build())
-                        .retrieve()
-                        .body(JsonNode.class);
-            } else {
+            if (!q.isEmpty()) {
                 root = http.get()
                         .uri(b -> b.path("/tim-kiem")
                                 .queryParam("keyword", q)
-                                .queryParam("page", p)
+                                .queryParam("page", targetPage)
                                 .queryParam("limit", 24)
                                 .build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } else {
+                String path = resolveVsmovPath(cat);
+                root = http.get()
+                        .uri(b -> b.path(path).queryParam("page", targetPage).build())
                         .retrieve()
                         .body(JsonNode.class);
             }
         }
 
         if (root == null) {
-            return new MoviePage(List.of(), p, 1);
+            return new MoviePage(List.of(), targetPage, 1);
         }
 
         String pathImage = text(root.path("pathImage"));
@@ -111,20 +135,61 @@ public class CustomMovieProvider implements MovieProvider {
             String title = text(item.path("name"));
             String year = extractYear(item);
             String poster = resolveImage(item, pathImage);
-            items.add(new MovieSummary(slug, title, year, poster));
+            String backdrop = resolveBackdrop(item, pathImage, poster);
+            String quality = text(item.path("quality"));
+            String lang = text(item.path("language"));
+            String badge = !quality.isEmpty() && !lang.isEmpty() ? (quality + " · " + lang) : (!quality.isEmpty() ? quality : lang);
+            items.add(new MovieSummary(slug, title, year, poster, currentEp, badge, backdrop));
+        }
+
+        // Nếu chọn "month" (Hot tháng), ưu tiên các phim phát hành năm mới nhất lên đầu
+        if ("month".equals(per) && q.isEmpty()) {
+            items.sort((a, b) -> b.year().compareTo(a.year()));
+        } else if ("week".equals(per) && q.isEmpty()) {
+            // Đảo nhẹ thứ tự các phim nhiều tập / hoàn tất lên đầu cho bảng Hot tuần
+            items.sort((a, b) -> Boolean.compare(
+                    b.currentEpisode().toLowerCase().contains("hoàn tất") || b.currentEpisode().toLowerCase().contains("full"),
+                    a.currentEpisode().toLowerCase().contains("hoàn tất") || a.currentEpisode().toLowerCase().contains("full")
+            ));
         }
 
         if (isNguonC) {
             JsonNode paginate = root.path("paginate");
-            int currentPage = paginate.path("current_page").asInt(p);
+            int currentPage = paginate.path("current_page").asInt(targetPage);
             int totalPages = Math.max(1, paginate.path("total_page").asInt(1));
             return new MoviePage(items, currentPage, totalPages);
         } else {
             JsonNode pagination = root.path("pagination");
-            int currentPage = pagination.path("currentPage").asInt(p);
+            int currentPage = pagination.path("currentPage").asInt(targetPage);
             int totalPages = Math.max(1, pagination.path("totalPages").asInt(1));
             return new MoviePage(items, currentPage, totalPages);
         }
+    }
+
+    private static String resolveNguonCPath(String cat) {
+        if (cat.isEmpty() || "all".equals(cat) || !SAFE_SLUG.matcher(cat).matches()) {
+            return "/films/phim-moi-cap-nhat";
+        }
+        if (LIST_SLUGS.contains(cat)) {
+            return "/films/danh-sach/" + cat;
+        }
+        if (COUNTRY_SLUGS.contains(cat)) {
+            return "/films/quoc-gia/" + cat;
+        }
+        return "/films/the-loai/" + cat;
+    }
+
+    private static String resolveVsmovPath(String cat) {
+        if (cat.isEmpty() || "all".equals(cat) || !SAFE_SLUG.matcher(cat).matches()) {
+            return "/danh-sach/phim-moi-cap-nhat";
+        }
+        if (LIST_SLUGS.contains(cat)) {
+            return "/danh-sach/" + cat;
+        }
+        if (COUNTRY_SLUGS.contains(cat)) {
+            return "/quoc-gia/" + cat;
+        }
+        return "/the-loai/" + cat;
     }
 
     @Override
@@ -153,6 +218,10 @@ public class CustomMovieProvider implements MovieProvider {
         }
 
         String title = text(movie.path("name"));
+        String originalTitle = text(movie.path("original_name"));
+        if (originalTitle.isEmpty()) {
+            originalTitle = text(movie.path("origin_name"));
+        }
         String rawDesc = !text(movie.path("description")).isEmpty()
                 ? text(movie.path("description"))
                 : text(movie.path("content"));
@@ -188,7 +257,7 @@ public class CustomMovieProvider implements MovieProvider {
             }
         }
 
-        return new MovieDetail(id, title, description, year, poster, episodes);
+        return new MovieDetail(id, title, originalTitle, description, year, poster, episodes);
     }
 
     /**
@@ -248,6 +317,22 @@ public class CustomMovieProvider implements MovieProvider {
             return created.substring(0, 4);
         }
         return "";
+    }
+
+    private static String resolveBackdrop(JsonNode item, String pathImage, String fallback) {
+        String posterUrl = text(item.path("poster_url"));
+        if (posterUrl.isEmpty()) {
+            return fallback;
+        }
+        if (posterUrl.startsWith("http://") || posterUrl.startsWith("https://")) {
+            return posterUrl;
+        }
+        if (!pathImage.isEmpty()) {
+            String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
+            String cleanPath = posterUrl.startsWith("/") ? posterUrl.substring(1) : posterUrl;
+            return prefix + cleanPath;
+        }
+        return fallback;
     }
 
     /**

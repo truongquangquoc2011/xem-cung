@@ -17,7 +17,7 @@ public class RoomService {
     private static final Logger log = LoggerFactory.getLogger(RoomService.class);
     private static final String ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int ID_LENGTH = 6;
-    private static final Duration EMPTY_ROOM_TTL = Duration.ofMinutes(30);
+    private static final Duration EMPTY_ROOM_TTL = Duration.ofHours(24);
 
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
@@ -41,7 +41,7 @@ public class RoomService {
         return find(id).orElseThrow(() -> new RoomNotFoundException(id));
     }
 
-    /** Xoá phòng không còn ai trong 30 phút. */
+    /** Xoá phòng không còn ai trong 24 giờ. */
     @Scheduled(fixedDelay = 5 * 60 * 1000)
     public void cleanup() {
         long cutoff = System.currentTimeMillis() - EMPTY_ROOM_TTL.toMillis();

@@ -5,11 +5,12 @@ interface Props {
   title: string;
   items: MovieSummary[];
   busyId?: string | null;
+  ranked?: boolean;
   onPick(movie: MovieSummary): void;
 }
 
 /** Hàng poster cuộn ngang, có nút mũi tên trái/phải. */
-export function PosterRow({ title, items, busyId, onPick }: Props) {
+export function PosterRow({ title, items, busyId, ranked = false, onPick }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const scroll = (dir: 1 | -1) => {
     const el = trackRef.current;
@@ -37,13 +38,17 @@ export function PosterRow({ title, items, busyId, onPick }: Props) {
           ‹
         </button>
         <div className="row-track" ref={trackRef}>
-          {items.map((m) => (
+          {items.map((m, idx) => (
             <button key={m.id} className="poster" onClick={() => onPick(m)} disabled={!!busyId} title={m.title}>
               {m.poster && <img src={m.poster} alt="" loading="lazy" />}
+              {ranked && <span className={`rank-badge ${idx < 3 ? 'top' : ''}`}>#{idx + 1}</span>}
+              {m.currentEpisode && <span className="ep-badge">{m.currentEpisode}</span>}
               <div className="poster-shade">
                 <span className="poster-play">{busyId === m.id ? '…' : '▶'}</span>
                 <span className="poster-name">{m.title}</span>
-                {m.year && <span className="poster-year">{m.year}</span>}
+                <span className="poster-year">
+                  {[m.year, m.quality].filter(Boolean).join(' · ')}
+                </span>
               </div>
             </button>
           ))}

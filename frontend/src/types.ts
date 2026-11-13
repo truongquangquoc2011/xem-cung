@@ -52,6 +52,9 @@ export interface MovieSummary {
   title: string;
   year?: string;
   poster?: string;
+  backdrop?: string;
+  currentEpisode?: string;
+  quality?: string;
 }
 
 export interface MoviePage {
@@ -68,10 +71,17 @@ export interface Episode {
 export interface MovieDetail {
   id: string;
   title: string;
+  originalTitle?: string;
   description?: string;
   year?: string;
   poster?: string;
   episodes: Episode[];
+}
+
+export interface SkipSegment {
+  type: 'op' | 'ed';
+  startTime: number;
+  endTime: number;
 }
 
 /** Điều khiển chung cho cả trình phát YouTube và <video>. */

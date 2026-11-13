@@ -1,4 +1,4 @@
-import type { MovieDetail, MoviePage } from './types';
+import type { MovieDetail, MoviePage, SkipSegment } from './types';
 
 /** Để trống khi chạy dev (Vite proxy) hoặc khi đóng gói chung 1 container. Khi deploy tách domain: VITE_API_URL=https://api.example.com */
 export const API_BASE: string = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -30,9 +30,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   createRoom: () => request<{ id: string }>('/api/rooms', { method: 'POST' }),
   getRoom: (id: string) => request<{ id: string; memberCount: number }>(`/api/rooms/${encodeURIComponent(id)}`),
-  searchMovies: (q: string, page = 1) =>
-    request<MoviePage>(`/api/movies?q=${encodeURIComponent(q)}&page=${page}`),
+  searchMovies: (q: string, page = 1, category = '', period = '') => {
+    const params = new URLSearchParams({ q, page: String(page) });
+    if (category) params.set('category', category);
+    if (period) params.set('period', period);
+    return request<MoviePage>(`/api/movies?${params.toString()}`);
+  },
+  searchYouTube: (q: string) =>
+    request<MoviePage>(`/api/movies/youtube?q=${encodeURIComponent(q)}`),
+  searchAi: (q = '') =>
+    request<MoviePage>(`/api/movies/ai?q=${encodeURIComponent(q)}`),
   movieDetail: (id: string) => request<MovieDetail>(`/api/movies/${encodeURIComponent(id)}`),
+  getSkipTimes: (title: string, originalTitle: string, episode: string) => {
+    const params = new URLSearchParams({ title, originalTitle, episode });
+    return request<SkipSegment[]>(`/api/movies/skip-times?${params.toString()}`);
+  },
 };
 
 /** URL WebSocket STOMP. Ghi đè bằng VITE_WS_URL nếu backend ở domain khác. */
