@@ -66,6 +66,17 @@ public class Room {
         return members.get(sessionId);
     }
 
+    public synchronized Member updateVoiceState(String sessionId, boolean inVoice, boolean muted, boolean deafened) {
+        Member current = members.get(sessionId);
+        if (current == null) {
+            return null;
+        }
+        Member updated = new Member(current.id(), current.name(), inVoice, muted, deafened);
+        members.put(sessionId, updated);
+        touch();
+        return updated;
+    }
+
     public synchronized ChatMessage addChat(String type, String user, String text) {
         String clean = text == null ? "" : text.strip();
         if (clean.isEmpty()) {

@@ -6,8 +6,10 @@ import { Logo } from '../components/Logo';
 import { MovieLibrary } from '../components/MovieLibrary';
 import { SourcePicker } from '../components/SourcePicker';
 import { VideoPlayer } from '../components/VideoPlayer';
+import { VoicePanel } from '../components/VoicePanel';
 import { usePlaybackSync } from '../hooks/usePlaybackSync';
 import { useRoom } from '../hooks/useRoom';
+import { useVoiceChat } from '../hooks/useVoiceChat';
 import type { MovieDetail, SkipSegment, VideoSource } from '../types';
 import { colorFor, initials, isEmojiOnly, loadName, saveName, toVideoSource } from '../utils';
 
@@ -44,6 +46,14 @@ export function RoomPage() {
   const sync = usePlaybackSync({ state: room.state, serverNow: room.serverNow, control: room.control });
   const source = room.state?.source;
   const connected = room.status === 'connected' && room.me !== null;
+  const voice = useVoiceChat({
+    me: room.me,
+    members: room.members,
+    connected,
+    sendVoiceState: room.sendVoiceState,
+    sendVoiceSignal: room.sendVoiceSignal,
+    setVoiceSignalListener: room.setVoiceSignalListener,
+  });
 
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -237,17 +247,47 @@ export function RoomPage() {
         <div className="room-header-right">
           <div className="members" title={room.members.map((m) => m.name).join(', ')}>
             <div className="avatar-stack">
-              {room.members.slice(0, 5).map((m) => (
-                <span key={m.id} className="avatar" style={{ background: colorFor(m.name) }}>
-                  {initials(m.name)}
-                </span>
-              ))}
+              {room.members.slice(0, 5).map((m) => {
+                const talking = Boolean(voice.speakingIds[m.id]);
+                return (
+                  <span
+                    key={m.id}
+                    className={`avatar ${talking ? 'speaking-ring' : ''}`}
+                    style={{ background: colorFor(m.name) }}
+                  >
+                    {initials(m.name)}
+                  </span>
+                );
+              })}
             </div>
             <span className="members-count">
               <span className={`status-dot ${connected ? 'ok' : 'warn'}`} />
               {connected ? `${room.members.length} đang xem` : 'Đang kết nối…'}
             </span>
           </div>
+          <button
+            type="button"
+            className={`voice-header-pill ${voice.inVoice ? 'connected' : ''}`}
+            disabled={!connected}
+            onClick={() => {
+              if (!voice.inVoice) {
+                void voice.joinVoice();
+                setChatOpen(true);
+              } else {
+                voice.toggleMute();
+              }
+            }}
+            title={
+              voice.inVoice
+                ? voice.muted
+                  ? 'Đang ở Voice (Đã tắt Mic) — bấm để bật Mic'
+                  : 'Đang ở Voice (Mic đang bật) — bấm để tắt Mic'
+                : 'Tham gia Voice Chat'
+            }
+          >
+            <span>{voice.inVoice ? (voice.muted ? '🔇' : '🎙️') : '🎧'}</span>
+            <span>{voice.inVoice ? (voice.muted ? 'Đã tắt Mic' : 'Voice ON') : 'Voice Chat'}</span>
+          </button>
           <button
             className={`icon-btn ${chatOpen ? 'active' : ''}`}
             onClick={() => setChatOpen((o) => !o)}
@@ -376,13 +416,16 @@ export function RoomPage() {
         </div>
 
         {chatOpen && (
-          <Chat
-            messages={room.chat}
-            myName={name ?? ''}
-            memberCount={room.members.length}
-            onSend={room.sendChat}
-            disabled={!connected}
-          />
+          <aside className="side-col" aria-label="Kênh thoại và trò chuyện">
+            <VoicePanel me={room.me} members={room.members} connected={connected} voice={voice} />
+            <Chat
+              messages={room.chat}
+              myName={name ?? ''}
+              memberCount={room.members.length}
+              onSend={room.sendChat}
+              disabled={!connected}
+            />
+          </aside>
         )}
       </main>
     </div>

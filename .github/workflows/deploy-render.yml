@@ -1,0 +1,24 @@
+# Mỗi lần push lên main -> gọi Deploy Hook của Render để build lại cả FE + BE.
+# Cần tạo secret RENDER_DEPLOY_HOOK (GitHub repo -> Settings -> Secrets and variables -> Actions).
+# Chưa tạo secret thì workflow chỉ in cảnh báo, không báo lỗi.
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::Chưa có secret RENDER_DEPLOY_HOOK, bỏ qua deploy."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Đã gọi Render deploy cho commit $GITHUB_SHA"

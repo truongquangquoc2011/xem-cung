@@ -25,13 +25,25 @@ export interface ChatMessage {
 export interface Member {
   id: string;
   name: string;
+  inVoice?: boolean;
+  muted?: boolean;
+  deafened?: boolean;
+}
+
+export interface VoiceSignalPayload {
+  from: string;
+  fromName: string;
+  to?: string | null;
+  type: 'hello' | 'offer' | 'answer' | 'ice' | 'speaking';
+  data?: unknown;
 }
 
 export interface RoomEvent {
-  type: 'STATE' | 'CHAT' | 'MEMBERS';
+  type: 'STATE' | 'CHAT' | 'MEMBERS' | 'VOICE';
   state?: PlaybackState;
   message?: ChatMessage;
   members?: Member[];
+  voice?: VoiceSignalPayload;
   by?: string;
   serverTime: number;
 }

@@ -9,6 +9,7 @@ import type {
   RoomEvent,
   RoomSnapshot,
   VideoSource,
+  VoiceSignalPayload,
 } from '../types';
 import { formatTime } from '../utils';
 
@@ -42,6 +43,7 @@ export function useRoom(roomId: string, name: string | null) {
   const clientRef = useRef<Client | null>(null);
   const offsetRef = useRef(0);
   const stateRef = useRef<PlaybackState | null>(null);
+  const voiceListenerRef = useRef<((sig: VoiceSignalPayload) => void) | null>(null);
 
   useEffect(() => {
     if (!name) return;
@@ -86,6 +88,8 @@ export function useRoom(roomId: string, name: string | null) {
           stateRef.current = event.state;
           setState(event.state);
           if (text) setNotice({ text, at: Date.now() });
+        } else if (event.type === 'VOICE' && event.voice) {
+          voiceListenerRef.current?.(event.voice);
         }
       });
 
@@ -104,7 +108,7 @@ export function useRoom(roomId: string, name: string | null) {
   }, [roomId, name]);
 
   const send = useCallback(
-    (path: 'control' | 'chat', body: unknown) => {
+    (path: 'control' | 'chat' | 'voice/state' | 'voice/signal', body: unknown) => {
       const c = clientRef.current;
       if (c?.connected) c.publish({ destination: `/app/room/${roomId}/${path}`, body: JSON.stringify(body) });
     },
@@ -118,8 +122,39 @@ export function useRoom(roomId: string, name: string | null) {
 
   const sendChat = useCallback((text: string) => send('chat', { text }), [send]);
 
+  const sendVoiceState = useCallback(
+    (inVoice: boolean, muted: boolean, deafened: boolean) =>
+      send('voice/state', { inVoice, muted, deafened }),
+    [send],
+  );
+
+  const sendVoiceSignal = useCallback(
+    (to: string | null, type: VoiceSignalPayload['type'], data?: unknown) =>
+      send('voice/signal', { to, type, data }),
+    [send],
+  );
+
+  const setVoiceSignalListener = useCallback((fn: ((sig: VoiceSignalPayload) => void) | null) => {
+    voiceListenerRef.current = fn;
+  }, []);
+
   /** Giờ hiện tại theo đồng hồ server (ms). */
   const serverNow = useCallback(() => Date.now() + offsetRef.current, []);
 
-  return { status, error, clearError: () => setError(null), state, chat, members, me, notice, control, sendChat, serverNow };
+  return {
+    status,
+    error,
+    clearError: () => setError(null),
+    state,
+    chat,
+    members,
+    me,
+    notice,
+    control,
+    sendChat,
+    sendVoiceState,
+    sendVoiceSignal,
+    setVoiceSignalListener,
+    serverNow,
+  };
 }

@@ -76,6 +76,36 @@ public class RoomSocketController {
         publishChat(room, room.addChat("USER", m.name(), req == null ? null : req.text()));
     }
 
+    @MessageMapping("/room/{roomId}/voice/state")
+    public void voiceState(@DestinationVariable String roomId, Requests.VoiceState req,
+                           SimpMessageHeaderAccessor headers) {
+        if (req == null) return;
+        Room room = rooms.get(roomId);
+        Member prev = requireMember(room, headers);
+        Member updated = room.updateVoiceState(headers.getSessionId(), req.inVoice(), req.muted(), req.deafened());
+        if (updated != null) {
+            long now = System.currentTimeMillis();
+            publish(room, RoomEvent.members(room.members(), now));
+            if (!prev.inVoice() && updated.inVoice()) {
+                publishChat(room, room.addChat("SYSTEM", null, updated.name() + " đã tham gia kênh thoại 🎙️"));
+            } else if (prev.inVoice() && !updated.inVoice()) {
+                publishChat(room, room.addChat("SYSTEM", null, updated.name() + " đã rời kênh thoại"));
+            }
+        }
+    }
+
+    @MessageMapping("/room/{roomId}/voice/signal")
+    public void voiceSignal(@DestinationVariable String roomId, Requests.VoiceSignal req,
+                            SimpMessageHeaderAccessor headers) {
+        if (req == null || req.type() == null) return;
+        Room room = rooms.get(roomId);
+        Member sender = requireMember(room, headers);
+        long now = System.currentTimeMillis();
+        RoomEvent.VoiceSignalPayload payload = new RoomEvent.VoiceSignalPayload(
+                sender.id(), sender.name(), req.to(), req.type(), req.data());
+        publish(room, RoomEvent.voice(payload, now));
+    }
+
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor headers = StompHeaderAccessor.wrap(event.getMessage());

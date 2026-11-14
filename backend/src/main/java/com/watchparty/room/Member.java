@@ -1,4 +1,7 @@
 package com.watchparty.room;
 
-public record Member(String id, String name) {
+public record Member(String id, String name, boolean inVoice, boolean muted, boolean deafened) {
+    public Member(String id, String name) {
+        this(id, name, false, false, false);
+    }
 }
