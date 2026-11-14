@@ -215,11 +215,6 @@ export function HtmlVideoPlayer({
       video.src = playUrl;
     }
 
-    /** Vị trí máy tự tua tới (để không nhầm là người dùng tua). */
-    let programmaticTarget: number | null = null;
-    /** Gom các lần kéo thanh tua liên tục thành 1 lệnh gửi lên phòng. */
-    let userSeekTimer: number | undefined;
-
     const handle: PlayerHandle = {
       play: () => {
         void video.play().catch((err: unknown) => {
@@ -229,12 +224,11 @@ export function HtmlVideoPlayer({
       },
       pause: () => video.pause(),
       seek: (t) => {
-        programmaticTarget = t;
         video.currentTime = t;
       },
       getTime: () => video.currentTime,
       isPlaying: () => !video.paused && !video.ended,
-      isSeeking: () => video.seeking || userSeekTimer !== undefined,
+      isSeeking: () => video.seeking || isDraggingRef.current,
     };
 
     let readyFired = false;
@@ -272,16 +266,6 @@ export function HtmlVideoPlayer({
     };
     const onSeeking = () => {
       setBuffering(true);
-      if (programmaticTarget !== null && Math.abs(video.currentTime - programmaticTarget) < 0.5) {
-        programmaticTarget = null;
-        return;
-      }
-      programmaticTarget = null;
-      window.clearTimeout(userSeekTimer);
-      userSeekTimer = window.setTimeout(() => {
-        userSeekTimer = undefined;
-        cb.current.onSeek(video.currentTime, true);
-      }, 250);
     };
     const onSeeked = () => setBuffering(false);
     const onError = () => {
@@ -304,7 +288,6 @@ export function HtmlVideoPlayer({
     video.addEventListener('error', onError);
 
     return () => {
-      window.clearTimeout(userSeekTimer);
       video.removeEventListener('loadedmetadata', onLoaded);
       video.removeEventListener('canplay', onLoaded);
       video.removeEventListener('play', onPlay);
@@ -332,12 +315,24 @@ export function HtmlVideoPlayer({
     revealControls();
   };
 
+  const isDraggingRef = useRef(false);
+
+  const commitUserSeek = (rawTarget: number) => {
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(rawTarget)) return;
+    const max = duration > 0 ? duration : (Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Number.MAX_SAFE_INTEGER);
+    const clamped = Math.max(0, Math.min(max, rawTarget));
+    v.currentTime = clamped;
+    setCurrentTime(clamped);
+    setScrubTime(null);
+    cb.current.onSeek(clamped, true);
+    revealControls();
+  };
+
   const jumpBy = (delta: number) => {
     const v = videoRef.current;
     if (!v) return;
-    const max = duration > 0 ? duration : Number.MAX_SAFE_INTEGER;
-    v.currentTime = Math.max(0, Math.min(max, v.currentTime + delta));
-    revealControls();
+    commitUserSeek(v.currentTime + delta);
   };
 
   const togglePiP = async () => {
@@ -374,7 +369,14 @@ export function HtmlVideoPlayer({
         className="player-frame"
         playsInline
         preload="auto"
-        onClick={togglePlay}
+        onClick={() => {
+          const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+          if (isTouch && !controlsVisible && playing) {
+            revealControls();
+            return;
+          }
+          togglePlay();
+        }}
         onDoubleClick={onToggleFullscreen}
       >
         {subtitles.map((sub) => (
@@ -434,18 +436,34 @@ export function HtmlVideoPlayer({
             style={{
               background: `linear-gradient(to right, #e5232f 0%, #e5232f ${progressPct}%, rgba(255,255,255,0.34) ${progressPct}%, rgba(255,255,255,0.34) ${bufferPct}%, rgba(255,255,255,0.16) ${bufferPct}%, rgba(255,255,255,0.16) 100%)`,
             }}
-            onChange={(e) => setScrubTime(Number(e.target.value))}
-            onPointerUp={() => {
-              if (scrubTime !== null && videoRef.current) {
-                videoRef.current.currentTime = scrubTime;
-                setScrubTime(null);
+            onPointerDown={() => {
+              isDraggingRef.current = true;
+            }}
+            onInput={(e) => {
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              setScrubTime(val);
+            }}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (isDraggingRef.current) {
+                setScrubTime(val);
+              } else {
+                commitUserSeek(val);
               }
             }}
-            onKeyUp={() => {
-              if (scrubTime !== null && videoRef.current) {
-                videoRef.current.currentTime = scrubTime;
-                setScrubTime(null);
-              }
+            onPointerUp={(e) => {
+              isDraggingRef.current = false;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              commitUserSeek(val);
+            }}
+            onTouchEnd={(e) => {
+              isDraggingRef.current = false;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              commitUserSeek(val);
+            }}
+            onKeyUp={(e) => {
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              commitUserSeek(val);
             }}
           />
         </div>

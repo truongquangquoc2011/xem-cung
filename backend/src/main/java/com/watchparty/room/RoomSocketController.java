@@ -40,6 +40,9 @@ public class RoomSocketController {
                              SimpMessageHeaderAccessor headers) {
         String sid = headers.getSessionId();
         Room room = rooms.get(roomId);
+        if (!room.checkPin(req == null ? null : req.pin())) {
+            throw new IllegalArgumentException("Mã PIN phòng không đúng");
+        }
 
         Map<String, Object> attrs = headers.getSessionAttributes();
         Object previous = attrs.get(ATTR_ROOM);

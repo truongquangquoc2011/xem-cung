@@ -1,12 +1,18 @@
 package com.watchparty.room;
 
-/** Payload client gửi lên qua STOMP. */
+/** Payload client gửi lên qua STOMP hoặc REST. */
 public final class Requests {
 
     private Requests() {
     }
 
-    public record Join(String name) {
+    public record CreateRoom(String title, String pin) {
+    }
+
+    public record VerifyPin(String pin) {
+    }
+
+    public record Join(String name, String pin) {
     }
 
     public record Chat(String text) {

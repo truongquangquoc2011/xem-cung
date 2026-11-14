@@ -17,14 +17,30 @@ public class Room {
     private static final int MAX_TITLE_LENGTH = 200;
     private static final Pattern YOUTUBE_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
 
+    public record RoomSummary(String id, String title, int memberCount, boolean hasPin,
+                              boolean pinned, String playingTitle) {
+    }
+
     private final String id;
+    private final String title;
+    private final String pin;
+    private final boolean pinned;
     private final Map<String, Member> members = new LinkedHashMap<>();
     private final Deque<ChatMessage> chat = new ArrayDeque<>();
     private PlaybackState state;
     private volatile long lastActive;
 
     public Room(String id) {
+        this(id, "Phòng " + id, null, false);
+    }
+
+    public Room(String id, String title, String pin, boolean pinned) {
         this.id = id;
+        String cleanTitle = title == null ? "" : title.strip();
+        this.title = cleanTitle.isEmpty() ? ("Phòng " + id) : cleanTitle;
+        String cleanPin = pin == null ? "" : pin.strip();
+        this.pin = cleanPin.isEmpty() ? null : cleanPin;
+        this.pinned = pinned;
         long now = System.currentTimeMillis();
         this.state = new PlaybackState(null, false, 0, now);
         this.lastActive = now;
@@ -32,6 +48,25 @@ public class Room {
 
     public String getId() {
         return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public boolean hasPin() {
+        return pin != null && !pin.isEmpty();
+    }
+
+    public boolean isPinned() {
+        return pinned;
+    }
+
+    public boolean checkPin(String candidate) {
+        if (!hasPin()) {
+            return true;
+        }
+        return pin.equals(candidate == null ? "" : candidate.strip());
     }
 
     public long getLastActive() {
@@ -48,6 +83,11 @@ public class Room {
 
     public synchronized PlaybackState state() {
         return state;
+    }
+
+    public synchronized RoomSummary summary() {
+        String playingTitle = state != null && state.source() != null ? state.source().title() : null;
+        return new RoomSummary(id, title, members.size(), hasPin(), pinned, playingTitle);
     }
 
     public synchronized Member join(String sessionId, String name) {
@@ -116,7 +156,8 @@ public class Room {
     }
 
     public synchronized RoomSnapshot snapshot(String you, long now) {
-        return new RoomSnapshot(id, you, state, new ArrayList<>(chat), new ArrayList<>(members.values()), now);
+        return new RoomSnapshot(id, title, hasPin(), you, state, new ArrayList<>(chat),
+                new ArrayList<>(members.values()), now);
     }
 
     private VideoSource requireSource() {

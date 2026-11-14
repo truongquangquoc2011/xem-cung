@@ -83,40 +83,59 @@ export function VoicePanel({ me, members, connected, voice }: Props) {
             const isDeafened = isMe ? voice.deafened : Boolean(m.deafened);
             const isSpeaking = Boolean(voice.speakingIds[m.id]) && !isMuted && !isDeafened;
             const peerState = !isMe ? voice.peerStatuses[m.id] : undefined;
+            const peerVol = voice.peerVolumes[m.id] ?? 100;
 
             return (
               <div key={m.id} className={`voice-member ${isSpeaking ? 'speaking' : ''}`}>
-                <div className={`voice-avatar-wrap ${isSpeaking ? 'speaking' : ''}`}>
-                  <span className="avatar sm" style={{ background: colorFor(m.name) }}>
-                    {initials(m.name)}
-                  </span>
+                <div className="voice-member-top">
+                  <div className={`voice-avatar-wrap ${isSpeaking ? 'speaking' : ''}`}>
+                    <span className="avatar sm" style={{ background: colorFor(m.name) }}>
+                      {initials(m.name)}
+                    </span>
+                  </div>
+                  <div className="voice-member-info">
+                    <span className="voice-member-name">
+                      {m.name} {isMe && <em className="voice-you">(Bạn)</em>}
+                    </span>
+                    <span className="voice-member-state">
+                      {isDeafened
+                        ? '🔕 Đã tắt tiếng'
+                        : isMuted
+                          ? '🔇 Đã tắt mic'
+                          : isSpeaking
+                            ? '🟢 Đang nói…'
+                            : isMe
+                              ? 'Đã kết nối'
+                              : peerState === 'connected'
+                                ? 'Đã kết nối RTC'
+                                : 'Đang đồng bộ…'}
+                    </span>
+                  </div>
+                  <div className="voice-member-icons">
+                    <span className={`voice-state-icon ${isMuted ? 'off' : 'on'}`} title={isMuted ? 'Đã tắt mic' : 'Mic đang bật'}>
+                      {isMuted ? '🔇' : '🎤'}
+                    </span>
+                    <span className={`voice-state-icon ${isDeafened ? 'off' : 'on'}`} title={isDeafened ? 'Đã tắt loa' : 'Loa đang bật'}>
+                      {isDeafened ? '🔕' : '🎧'}
+                    </span>
+                  </div>
                 </div>
-                <div className="voice-member-info">
-                  <span className="voice-member-name">
-                    {m.name} {isMe && <em className="voice-you">(Bạn)</em>}
-                  </span>
-                  <span className="voice-member-state">
-                    {isDeafened
-                      ? '🔕 Đã tắt tiếng'
-                      : isMuted
-                        ? '🔇 Đã tắt mic'
-                        : isSpeaking
-                          ? '🟢 Đang nói…'
-                          : isMe
-                            ? 'Đã kết nối'
-                            : peerState === 'connected'
-                              ? 'Đã kết nối RTC'
-                              : 'Đang đồng bộ…'}
-                  </span>
-                </div>
-                <div className="voice-member-icons">
-                  <span className={`voice-state-icon ${isMuted ? 'off' : 'on'}`} title={isMuted ? 'Đã tắt mic' : 'Mic đang bật'}>
-                    {isMuted ? '🔇' : '🎤'}
-                  </span>
-                  <span className={`voice-state-icon ${isDeafened ? 'off' : 'on'}`} title={isDeafened ? 'Đã tắt loa' : 'Loa đang bật'}>
-                    {isDeafened ? '🔕' : '🎧'}
-                  </span>
-                </div>
+                {!isMe && (
+                  <div className="voice-peer-vol" title="Chỉnh âm lượng mic của người này (chỉ áp dụng cho riêng bạn)">
+                    <span className="voice-peer-vol-label">
+                      {peerVol === 0 ? '🔇' : peerVol > 100 ? '🔊' : '🔉'} Âm lượng: <strong>{peerVol}%</strong>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={200}
+                      step={5}
+                      value={peerVol}
+                      aria-label={`Âm lượng của ${m.name}`}
+                      onChange={(e) => voice.setPeerVolume(m.id, Number(e.target.value))}
+                    />
+                  </div>
+                )}
               </div>
             );
           })

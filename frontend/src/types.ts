@@ -48,8 +48,19 @@ export interface RoomEvent {
   serverTime: number;
 }
 
+export interface RoomSummary {
+  id: string;
+  title: string;
+  memberCount: number;
+  hasPin: boolean;
+  pinned: boolean;
+  playingTitle?: string;
+}
+
 export interface RoomSnapshot {
   roomId: string;
+  roomTitle?: string;
+  hasPin?: boolean;
   you: string;
   state: PlaybackState;
   chat: ChatMessage[];
@@ -62,6 +73,7 @@ export type ControlAction = 'play' | 'pause' | 'seek' | 'load';
 export interface MovieSummary {
   id: string;
   title: string;
+  originalTitle?: string;
   year?: string;
   poster?: string;
   backdrop?: string;

@@ -4,7 +4,7 @@ import { api } from '../api';
 import { Logo } from '../components/Logo';
 import { PosterRow } from '../components/PosterRow';
 import { HOT_PERIODS, MOVIE_CATEGORIES, type HotPeriod } from '../constants/movies';
-import type { MovieDetail, MoviePage, MovieSummary, VideoSource } from '../types';
+import type { MovieDetail, MoviePage, MovieSummary, RoomSummary, VideoSource } from '../types';
 import { loadName, saveName, toVideoSource } from '../utils';
 
 export function HomePage() {
@@ -12,6 +12,12 @@ export function HomePage() {
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(loadName());
   const [code, setCode] = useState('');
+  const [roomTitleInput, setRoomTitleInput] = useState('');
+  const [roomPinInput, setRoomPinInput] = useState('');
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [pinModalRoom, setPinModalRoom] = useState<RoomSummary | null>(null);
+  const [joinPinInput, setJoinPinInput] = useState('');
+  const [joinPinError, setJoinPinError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [popular, setPopular] = useState<MovieSummary[]>([]);
@@ -46,7 +52,13 @@ export function HomePage() {
   const [heroPaused, setHeroPaused] = useState(false);
   const [heroDetails, setHeroDetails] = useState<Record<string, MovieDetail>>({});
 
+  const refreshRooms = () => {
+    api.listRooms().then(setRooms).catch(() => {});
+  };
+
   useEffect(() => {
+    refreshRooms();
+    const roomTimer = window.setInterval(refreshRooms, 8000);
     api.searchMovies('', 1).then((p) => setPopular(p.items)).catch(() => {});
     api.searchMovies('', 2).then((p) => setMore(p.items)).catch(() => {});
     Promise.allSettled([
@@ -71,7 +83,10 @@ export function HomePage() {
     });
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => {
+      window.clearInterval(roomTimer);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -150,11 +165,55 @@ export function HomePage() {
     setBusy(busyKey);
     setError(null);
     try {
-      const { id } = await api.createRoom();
-      navigate(`/room/${id}`, { state: { name: n, initialSource, initialMovieDetail } });
+      const customTitle = roomTitleInput.trim() || (initialMovieDetail ? `Phòng xem ${initialMovieDetail.title}` : `Phòng của ${n}`);
+      const customPin = roomPinInput.trim();
+      const created = await api.createRoom(customTitle, customPin);
+      navigate(`/room/${created.id}`, {
+        state: { name: n, pin: customPin, initialSource, initialMovieDetail },
+      });
     } catch (e) {
       setError((e as Error).message);
       setBusy(null);
+    }
+  };
+
+  const enterExistingRoom = (room: RoomSummary) => {
+    const n = requireName();
+    if (!n) return;
+    if (room.hasPin) {
+      setJoinPinInput('');
+      setJoinPinError(null);
+      setPinModalRoom(room);
+      return;
+    }
+    navigate(`/room/${room.id}`, { state: { name: n } });
+  };
+
+  const submitPinJoin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!pinModalRoom) return;
+    const n = requireName();
+    if (!n) return;
+    const candidate = joinPinInput.trim();
+    if (!candidate) {
+      setJoinPinError('Vui lòng nhập mã PIN / mật khẩu phòng.');
+      return;
+    }
+    setBusy('pin-verify');
+    setJoinPinError(null);
+    try {
+      const res = await api.verifyRoomPin(pinModalRoom.id, candidate);
+      setBusy(null);
+      if (!res.ok) {
+        setJoinPinError('Mã PIN / mật khẩu không đúng!');
+        return;
+      }
+      const targetId = pinModalRoom.id;
+      setPinModalRoom(null);
+      navigate(`/room/${targetId}`, { state: { name: n, pin: candidate } });
+    } catch (err) {
+      setBusy(null);
+      setJoinPinError((err as Error).message);
     }
   };
 
@@ -189,8 +248,9 @@ export function HomePage() {
     setBusy('join');
     setError(null);
     try {
-      await api.getRoom(id);
-      navigate(`/room/${id}`, { state: { name: n } });
+      const room = await api.getRoom(id);
+      setBusy(null);
+      enterExistingRoom(room);
     } catch {
       setError(`Không tìm thấy phòng ${id}.`);
       setBusy(null);
@@ -327,8 +387,25 @@ export function HomePage() {
               maxLength={30}
               aria-label="Tên của bạn"
             />
+            <input
+              value={roomTitleInput}
+              onChange={(e) => setRoomTitleInput(e.target.value)}
+              placeholder="Tên phòng (tuỳ chọn)…"
+              maxLength={50}
+              aria-label="Tên phòng tuỳ chọn"
+              className="room-opt-input"
+            />
+            <input
+              type="password"
+              value={roomPinInput}
+              onChange={(e) => setRoomPinInput(e.target.value)}
+              placeholder="🔒 Mã PIN (nếu muốn khoá)"
+              maxLength={12}
+              aria-label="Mã PIN phòng tuỳ chọn"
+              className="room-pin-input"
+            />
             <button className="btn btn-primary" onClick={() => createRoom('create')} disabled={!!busy}>
-              + {busy === 'create' ? 'Đang tạo…' : 'Tạo phòng trống'}
+              + {busy === 'create' ? 'Đang tạo…' : roomPinInput.trim() ? 'Tạo phòng khoá PIN' : 'Tạo phòng mới'}
             </button>
           </div>
           {error && <p className="error-text">{error}</p>}
@@ -355,6 +432,59 @@ export function HomePage() {
       </header>
 
       <main className="home-rows">
+        <section className="home-rooms-section" aria-label="Danh sách phòng đang mở và phòng tạo sẵn">
+          <div className="rooms-sec-head">
+            <div>
+              <h2 className="row-title">🚪 Sảnh Phòng Chiếu &amp; Phòng Tạo Sẵn</h2>
+              <p className="rooms-sec-sub">
+                Vào ngay các phòng cố định 24/7 hoặc tham gia phòng do mọi người vừa tạo (hỗ trợ khoá mã PIN riêng tư)
+              </p>
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={refreshRooms}>
+              ↻ Làm mới
+            </button>
+          </div>
+
+          <div className="room-lobby-grid">
+            {rooms.map((r) => (
+              <div
+                key={r.id}
+                className={`room-lobby-card ${r.pinned ? 'pinned' : ''} ${r.hasPin ? 'locked' : ''}`}
+                onClick={() => enterExistingRoom(r)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    enterExistingRoom(r);
+                  }
+                }}
+              >
+                <div className="room-lobby-top">
+                  <span className={`room-badge ${r.hasPin ? 'pin' : r.pinned ? 'official' : 'public'}`}>
+                    {r.hasPin ? '🔒 Khoá PIN' : r.pinned ? '★ Sảnh 24/7' : '🌐 Công khai'}
+                  </span>
+                  <span className="room-code-pill">#{r.id}</span>
+                </div>
+
+                <h3 className="room-lobby-title">{r.title}</h3>
+
+                <p className="room-lobby-playing" title={r.playingTitle || 'Đang chờ chọn phim'}>
+                  {r.playingTitle ? `🎬 ${r.playingTitle}` : '🍿 Đang chờ chọn phim…'}
+                </p>
+
+                <div className="room-lobby-foot">
+                  <span className="room-members-count">
+                    <span className={`live-dot ${r.memberCount > 0 ? 'on' : 'idle'}`} />
+                    {r.memberCount} người trong phòng
+                  </span>
+                  <span className="room-enter-cta">{r.hasPin ? 'Nhập PIN →' : 'Vào ngay →'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="home-discover" aria-label="Tìm kiếm và lọc phim">
           <div className="discover-head">
             <h2 className="row-title">Khám phá kho phim</h2>
@@ -594,6 +724,45 @@ export function HomePage() {
         <Logo />
         <span className="muted small">Đồ án môn học · Video YouTube, kho phim qua API và link video công khai.</span>
       </footer>
+      {pinModalRoom && (
+        <div className="modal-backdrop" onClick={() => setPinModalRoom(null)}>
+          <div className="modal-card pin-modal-card" onClick={(e) => e.stopPropagation()}>
+            <header className="modal-head">
+              <div>
+                <p className="kicker">🔒 Phòng Riêng Tư</p>
+                <h3>{pinModalRoom.title} (#{pinModalRoom.id})</h3>
+              </div>
+              <button className="btn btn-ghost" onClick={() => setPinModalRoom(null)} aria-label="Đóng">
+                ✕
+              </button>
+            </header>
+            <form className="pin-modal-form" onSubmit={submitPinJoin}>
+              <p className="muted">Phòng này được bảo vệ bằng mã PIN / mật khẩu. Nhập mã PIN để vào phòng:</p>
+              <input
+                type="password"
+                value={joinPinInput}
+                onChange={(e) => {
+                  setJoinPinInput(e.target.value);
+                  setJoinPinError(null);
+                }}
+                placeholder="Nhập mã PIN / mật khẩu…"
+                autoFocus
+                maxLength={12}
+                aria-label="Nhập mã PIN"
+              />
+              {joinPinError && <p className="error-text">{joinPinError}</p>}
+              <div className="pin-modal-actions">
+                <button type="button" className="btn btn-ghost" onClick={() => setPinModalRoom(null)}>
+                  Huỷ
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={busy === 'pin-verify'}>
+                  {busy === 'pin-verify' ? 'Đang kiểm tra…' : 'Mở khoá & Vào phòng'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

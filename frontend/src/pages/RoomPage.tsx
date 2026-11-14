@@ -10,7 +10,7 @@ import { VoicePanel } from '../components/VoicePanel';
 import { usePlaybackSync } from '../hooks/usePlaybackSync';
 import { useRoom } from '../hooks/useRoom';
 import { useVoiceChat } from '../hooks/useVoiceChat';
-import type { MovieDetail, SkipSegment, VideoSource } from '../types';
+import type { MovieDetail, MovieSummary, RoomSummary, SkipSegment, VideoSource } from '../types';
 import { colorFor, initials, isEmojiOnly, loadName, saveName, toVideoSource } from '../utils';
 
 interface FloatingEmoji {
@@ -21,8 +21,35 @@ interface FloatingEmoji {
 
 interface NavState {
   name?: string;
+  pin?: string;
   initialSource?: VideoSource;
   initialMovieDetail?: MovieDetail;
+}
+
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractFranchiseBase(rawTitle: string): string {
+  if (!rawTitle) return '';
+  let base = rawTitle.split(' · ')[0].trim();
+  base = base
+    .replace(/\s*\((?:phần|phan|season|part|mùa|mua|movie|ova|special|tập|tap)\s*[^)]*\)/gi, '')
+    .replace(/\s*(?:[-–—:]\s*)?(?:phần|phan|season|part|mùa|mua|movie|ova)\s*\d+.*$/gi, '')
+    .replace(/\s+\d+\s*$/, '')
+    .trim();
+  const colonIdx = base.indexOf(':');
+  if (colonIdx >= 5) {
+    base = base.slice(0, colonIdx).trim();
+  }
+  return base;
 }
 
 export function RoomPage() {
@@ -32,17 +59,28 @@ export function RoomPage() {
   const navState = (location.state as NavState | null) ?? {};
 
   const [exists, setExists] = useState<boolean | null>(null);
+  const [roomMeta, setRoomMeta] = useState<RoomSummary | null>(null);
   const [name, setName] = useState<string | null>(navState.name ?? null);
-  const [draftName, setDraftName] = useState(loadName());
+  const [draftName, setDraftName] = useState(navState.name || loadName());
+  const [pin, setPin] = useState<string>(navState.pin ?? '');
+  const [draftPin, setDraftPin] = useState<string>(navState.pin ?? '');
+  const [pinVerified, setPinVerified] = useState<boolean>(Boolean(navState.pin));
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [verifyingPin, setVerifyingPin] = useState(false);
 
   useEffect(() => {
     api
       .getRoom(id)
-      .then(() => setExists(true))
+      .then((info) => {
+        setRoomMeta(info);
+        setExists(true);
+        if (!info.hasPin) setPinVerified(true);
+      })
       .catch(() => setExists(false));
   }, [id]);
 
-  const room = useRoom(id, exists ? name : null);
+  const canConnect = Boolean(exists && name && (!roomMeta?.hasPin || pinVerified));
+  const room = useRoom(id, canConnect ? name : null, pin);
   const sync = usePlaybackSync({ state: room.state, serverNow: room.serverNow, control: room.control });
   const source = room.state?.source;
   const connected = room.status === 'connected' && room.me !== null;
@@ -65,21 +103,53 @@ export function RoomPage() {
   const [activeSkip, setActiveSkip] = useState<SkipSegment | null>(null);
   const [epModalOpen, setEpModalOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const [relatedMovies, setRelatedMovies] = useState<MovieSummary[]>([]);
+  const [relatedLoadingId, setRelatedLoadingId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const lastChatId = useRef<string | null>(null);
   const initialLoaded = useRef(false);
 
   useEffect(() => {
-    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const onFsChange = () => {
+      const nativeFs = Boolean(document.fullscreenElement);
+      setIsFullscreen(nativeFs || pseudoFullscreen);
+    };
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
+  }, [pseudoFullscreen]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => undefined);
+      setPseudoFullscreen(false);
+      setIsFullscreen(false);
+      return;
+    }
+    if (pseudoFullscreen) {
+      setPseudoFullscreen(false);
+      setIsFullscreen(false);
+      return;
+    }
+    const el = stageRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }) | null;
+    if (el?.requestFullscreen) {
+      el.requestFullscreen()
+        .then(() => setIsFullscreen(true))
+        .catch(() => {
+          setPseudoFullscreen(true);
+          setIsFullscreen(true);
+        });
+    } else if (el?.webkitRequestFullscreen) {
+      try {
+        void el.webkitRequestFullscreen();
+        setIsFullscreen(true);
+      } catch {
+        setPseudoFullscreen(true);
+        setIsFullscreen(true);
+      }
     } else {
-      stageRef.current?.requestFullscreen().catch(() => undefined);
+      setPseudoFullscreen(true);
+      setIsFullscreen(true);
     }
   };
 
@@ -98,6 +168,72 @@ export function RoomPage() {
   const handleNextEpisode = () => {
     if (!nextEp || !rememberedMovie || !connected) return;
     room.control('load', 0, toVideoSource(nextEp.url, `${rememberedMovie.title} · ${nextEp.name}`));
+  };
+
+  // Tự động tìm các phần tiếp theo / Movie cùng bộ (ví dụ Solo Leveling Phần 2, Movie...)
+  useEffect(() => {
+    if (!source || source.type !== 'video' || !movieTitle) {
+      setRelatedMovies([]);
+      return;
+    }
+    const baseTitle = extractFranchiseBase(movieTitle);
+    const origBase = extractFranchiseBase(rememberedMovie?.originalTitle ?? '');
+    if (baseTitle.length < 3 && origBase.length < 3) {
+      setRelatedMovies([]);
+      return;
+    }
+    let cancelled = false;
+    const queries = Array.from(new Set([baseTitle, origBase].filter((q) => q.length >= 3)));
+    Promise.allSettled(queries.map((q) => api.searchMovies(q, 1))).then((results) => {
+      if (cancelled) return;
+      const normBase = normalizeForMatch(baseTitle);
+      const normOrig = normalizeForMatch(origBase);
+      const normCurrentTitle = normalizeForMatch(movieTitle);
+      const seen = new Set<string>();
+      const matched: MovieSummary[] = [];
+
+      for (const res of results) {
+        if (res.status !== 'fulfilled') continue;
+        for (const item of res.value.items) {
+          if (seen.has(item.id)) continue;
+          if (rememberedMovie && item.id === rememberedMovie.id) continue;
+          const normItemTitle = normalizeForMatch(item.title);
+          const normItemOrig = normalizeForMatch(item.originalTitle ?? '');
+          if (normItemTitle === normCurrentTitle && !rememberedMovie) continue;
+
+          const matchesBase =
+            (normBase.length >= 3 && (normItemTitle.includes(normBase) || normItemOrig.includes(normBase))) ||
+            (normOrig.length >= 3 && (normItemTitle.includes(normOrig) || normItemOrig.includes(normOrig)));
+
+          if (matchesBase) {
+            seen.add(item.id);
+            matched.push(item);
+          }
+        }
+      }
+      setRelatedMovies(matched.slice(0, 8));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [source?.type, movieTitle, rememberedMovie?.id, rememberedMovie?.originalTitle]);
+
+  const handlePickRelatedMovie = async (m: MovieSummary) => {
+    if (!connected || relatedLoadingId) return;
+    setRelatedLoadingId(m.id);
+    try {
+      const detail = await api.movieDetail(m.id);
+      setRememberedMovie(detail);
+      if (detail.episodes.length > 0) {
+        const ep = detail.episodes[0];
+        const label = detail.episodes.length > 1 ? `${detail.title} · ${ep.name}` : detail.title;
+        room.control('load', 0, toVideoSource(ep.url, label));
+      }
+    } catch (e) {
+      setPlayerError((e as Error).message);
+    } finally {
+      setRelatedLoadingId(null);
+    }
   };
 
   // Chọn phim từ trang chủ -> chiếu ngay khi vào phòng (chỉ khi phòng chưa có gì)
@@ -181,10 +317,33 @@ export function RoomPage() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const enter = (e: FormEvent) => {
+  const enter = async (e: FormEvent) => {
     e.preventDefault();
     const n = draftName.trim();
     if (!n) return;
+    if (roomMeta?.hasPin) {
+      const candidate = draftPin.trim();
+      if (!candidate) {
+        setPinError('Vui lòng nhập mã PIN / mật khẩu của phòng.');
+        return;
+      }
+      setVerifyingPin(true);
+      setPinError(null);
+      try {
+        const res = await api.verifyRoomPin(id, candidate);
+        setVerifyingPin(false);
+        if (!res.ok) {
+          setPinError('Mã PIN / mật khẩu không đúng!');
+          return;
+        }
+        setPin(candidate);
+        setPinVerified(true);
+      } catch (err) {
+        setVerifyingPin(false);
+        setPinError((err as Error).message);
+        return;
+      }
+    }
     saveName(n);
     setName(n);
   };
@@ -204,26 +363,40 @@ export function RoomPage() {
     );
   }
 
-  if (exists && !name) {
+  if (exists && !canConnect) {
     return (
       <main className="center-page">
         <form className="ticket" onSubmit={enter}>
           <Logo />
           <div className="ticket-stub">
-            <span className="kicker">Vé vào phòng</span>
-            <strong className="ticket-code">{id}</strong>
+            <span className="kicker">{roomMeta?.hasPin ? '🔒 Phòng khoá PIN' : 'Vé vào phòng'}</span>
+            <strong className="ticket-code">{roomMeta?.title ? `${roomMeta.title} (#${id})` : id}</strong>
           </div>
-          <h1>Bạn tên gì?</h1>
+          <h1>{roomMeta?.hasPin ? 'Nhập tên & Mã PIN' : 'Bạn tên gì?'}</h1>
           <input
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
-            placeholder="Tên hiển thị"
+            placeholder="Tên hiển thị của bạn"
             maxLength={30}
             autoFocus
             aria-label="Tên hiển thị"
           />
-          <button className="btn btn-primary btn-lg block" disabled={!draftName.trim()}>
-            ▶ Vào phòng chiếu
+          {roomMeta?.hasPin && (
+            <input
+              type="password"
+              value={draftPin}
+              onChange={(e) => {
+                setDraftPin(e.target.value);
+                setPinError(null);
+              }}
+              placeholder="🔒 Mã PIN / mật khẩu phòng"
+              maxLength={12}
+              aria-label="Mã PIN phòng"
+            />
+          )}
+          {pinError && <p className="error-text">{pinError}</p>}
+          <button className="btn btn-primary btn-lg block" disabled={!draftName.trim() || verifyingPin}>
+            ▶ {verifyingPin ? 'Đang kiểm tra…' : 'Vào phòng chiếu'}
           </button>
         </form>
       </main>
@@ -237,8 +410,9 @@ export function RoomPage() {
       <header className="room-header">
         <Logo />
         <div className="room-pill">
-          <span className="kicker">Phòng</span>
-          <strong>{id}</strong>
+          <span className="kicker">{room.hasPin || roomMeta?.hasPin ? '🔒 Phòng' : 'Phòng'}</span>
+          <strong>{room.roomTitle || roomMeta?.title || id}</strong>
+          <span className="room-pill-code">#{id}</span>
           <button className="pill-btn" onClick={copyLink}>
             {copied ? 'Đã chép ✓' : 'Chép link mời'}
           </button>
@@ -316,7 +490,7 @@ export function RoomPage() {
               style={ambient ? { backgroundImage: `url(${ambient})` } : undefined}
               aria-hidden="true"
             />
-            <div className="stage" ref={stageRef}>
+            <div className={`stage ${pseudoFullscreen ? 'pseudo-fullscreen' : ''}`} ref={stageRef}>
               {source ? (
                 <VideoPlayer
                   source={source}
@@ -413,6 +587,42 @@ export function RoomPage() {
             onRememberMovie={setRememberedMovie}
             onLoad={(s) => room.control('load', 0, s)}
           />
+
+          {relatedMovies.length > 0 && (
+            <section className="related-franchise-sec" aria-label="Phần tiếp theo và phim cùng bộ">
+              <div className="related-head">
+                <div>
+                  <span className="kicker">✦ Đề xuất theo phim đang chiếu</span>
+                  <h2 className="related-title">🎬 Phần tiếp theo &amp; Phim cùng bộ</h2>
+                </div>
+              </div>
+              <div className="related-row">
+                {relatedMovies.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="related-card"
+                    disabled={!connected || relatedLoadingId === m.id}
+                    onClick={() => void handlePickRelatedMovie(m)}
+                  >
+                    <div className="related-poster">
+                      {m.poster ? <img src={m.poster} alt={m.title} loading="lazy" /> : <div className="poster-fallback">🎬</div>}
+                      {m.currentEpisode && <span className="related-ep-badge">{m.currentEpisode}</span>}
+                    </div>
+                    <div className="related-info">
+                      <strong className="related-name">{m.title}</strong>
+                      <span className="related-meta">
+                        {[m.year, m.quality].filter(Boolean).join(' · ') || 'Chiếu ngay'}
+                      </span>
+                      <span className="related-cta">
+                        {relatedLoadingId === m.id ? 'Đang tải…' : '▶ Chuyển sang phần này'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         {chatOpen && (

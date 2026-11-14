@@ -31,10 +31,12 @@ function describeChange(prev: PlaybackState | null, next: PlaybackState, by?: st
  * Kết nối STOMP tới phòng: nhận trạng thái phát, chat, danh sách thành viên.
  * name = null thì chưa kết nối (đang chờ người dùng nhập tên).
  */
-export function useRoom(roomId: string, name: string | null) {
+export function useRoom(roomId: string, name: string | null, pin?: string) {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState | null>(null);
+  const [roomTitle, setRoomTitle] = useState<string>('');
+  const [hasPin, setHasPin] = useState<boolean>(false);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<string | null>(null);
@@ -66,6 +68,8 @@ export function useRoom(roomId: string, name: string | null) {
         ready = true;
         stateRef.current = snap.state;
         setMe(snap.you);
+        setRoomTitle(snap.roomTitle ?? '');
+        setHasPin(Boolean(snap.hasPin));
         setState(snap.state);
         setChat(snap.chat);
         setMembers(snap.members);
@@ -93,7 +97,7 @@ export function useRoom(roomId: string, name: string | null) {
         }
       });
 
-      client.publish({ destination: `/app/room/${roomId}/join`, body: JSON.stringify({ name }) });
+      client.publish({ destination: `/app/room/${roomId}/join`, body: JSON.stringify({ name, pin: pin ?? '' }) });
     };
 
     client.onWebSocketClose = () => setStatus('reconnecting');
@@ -105,7 +109,7 @@ export function useRoom(roomId: string, name: string | null) {
       clientRef.current = null;
       void client.deactivate();
     };
-  }, [roomId, name]);
+  }, [roomId, name, pin]);
 
   const send = useCallback(
     (path: 'control' | 'chat' | 'voice/state' | 'voice/signal', body: unknown) => {
@@ -146,6 +150,8 @@ export function useRoom(roomId: string, name: string | null) {
     error,
     clearError: () => setError(null),
     state,
+    roomTitle,
+    hasPin,
     chat,
     members,
     me,

@@ -4,7 +4,7 @@ import type { ControlAction, PlaybackState, PlayerHandle, VideoSource } from '..
 /** Lệch quá ngưỡng này (giây) thì coi là người dùng tự tua. */
 const USER_SEEK_THRESHOLD = 1.5;
 /** Khi đang phát, lệch quá ngưỡng này thì tự tua lại cho khớp phòng. */
-const DRIFT_THRESHOLD = 2;
+const DRIFT_THRESHOLD = 4.5;
 /** Bỏ qua sự kiện của trình phát trong khoảng này sau khi ta tự điều khiển nó. */
 const ECHO_WINDOW_MS = 1000;
 const CHECK_INTERVAL_MS = 2000;
@@ -64,8 +64,9 @@ export function usePlaybackSync({ state, serverNow, control }: Options) {
       // nếu vừa mới seek gần đây thì KHÔNG seek lại liên tục làm huỷ (ERR_ABORTED) request tải segment HLS.
       const isCurrentlyPlaying = h.isPlaying();
       const shouldSkipSeekBecauseBuffering = !isCurrentlyPlaying && lastSeekAt.current > 0 && now - lastSeekAt.current < 30000;
+      const recentlyActedLocally = now - localActionAt.current < 3500 && Math.abs(h.getTime() - target) < 6;
 
-      if (!shouldSkipSeekBecauseBuffering && Math.abs(h.getTime() - target) > threshold) {
+      if (!shouldSkipSeekBecauseBuffering && !recentlyActedLocally && !h.isSeeking?.() && Math.abs(h.getTime() - target) > threshold) {
         h.seek(target);
         lastSeekAt.current = now;
         synced.current = false;
@@ -201,7 +202,16 @@ export function usePlaybackSync({ state, serverNow, control }: Options) {
         return;
       }
       if (isEcho()) return;
-      if (s.playing && Math.abs(t - expected(s)) < 3) return;
+      if (s.playing) {
+        // Phòng đã đang phát: nếu máy này bị trễ nhiều sau khi buffer xong thì tự nhảy theo phòng, KHÔNG phát lệnh play kéo cả phòng lùi lại
+        const target = expected(s);
+        if (Math.abs(t - target) > DRIFT_THRESHOLD && h) {
+          h.seek(target);
+          lastSeekAt.current = Date.now();
+          appliedAt.current = Date.now();
+        }
+        return;
+      }
       localActionAt.current = Date.now();
       control('play', t);
     },

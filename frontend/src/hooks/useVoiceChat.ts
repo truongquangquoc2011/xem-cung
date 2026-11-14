@@ -21,6 +21,7 @@ interface PeerEntry {
   pc: RTCPeerConnection;
   iceQueue: RTCIceCandidateInit[];
   audioEl: HTMLAudioElement;
+  gainNode?: GainNode;
   cleanupAnalyser?: () => void;
 }
 
@@ -50,6 +51,7 @@ export function useVoiceChat({
   const [sensitivity, setSensitivity] = useState(12); // ngưỡng phát hiện đang nói (0..60)
   const [micGainPct, setMicGainPct] = useState(100); // 0..200%
   const [outputVolPct, setOutputVolPct] = useState(100); // 0..100%
+  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({}); // peerId -> 0..200%
   const [speakingIds, setSpeakingIds] = useState<Record<string, boolean>>({});
   const [peerStatuses, setPeerStatuses] = useState<Record<string, RTCPeerConnectionState>>({});
   const [micDevices, setMicDevices] = useState<AudioDeviceOption[]>([]);
@@ -71,6 +73,7 @@ export function useVoiceChat({
   const testingMicRef = useRef(false);
   const sensitivityRef = useRef(12);
   const outputVolRef = useRef(1);
+  const peerVolumesRef = useRef<Record<string, number>>({});
   const meRef = useRef<string | null>(null);
   const lastSpeakingSentRef = useRef(false);
 
@@ -80,7 +83,34 @@ export function useVoiceChat({
   testingMicRef.current = testingMic;
   sensitivityRef.current = sensitivity;
   outputVolRef.current = outputVolPct / 100;
+  peerVolumesRef.current = peerVolumes;
   meRef.current = me;
+
+  const applyPeerAudioVolume = useCallback((peerId: string, entry: PeerEntry) => {
+    const peerPct = peerVolumesRef.current[peerId] ?? 100;
+    const master = outputVolRef.current;
+    const isDeaf = deafenedRef.current;
+    entry.audioEl.muted = isDeaf || peerPct <= 0;
+    entry.audioEl.volume = Math.min(1, Math.max(0, master * Math.min(1, peerPct / 100)));
+    if (entry.gainNode && audioCtxRef.current) {
+      const extraBoost = isDeaf || peerPct <= 100 ? 0 : master * ((peerPct - 100) / 100);
+      entry.gainNode.gain.setTargetAtTime(extraBoost, audioCtxRef.current.currentTime, 0.02);
+    }
+  }, []);
+
+  const setPeerVolume = useCallback(
+    (peerId: string, pct: number) => {
+      const clamped = Math.max(0, Math.min(200, Math.round(pct)));
+      setPeerVolumes((prev) => {
+        const next = { ...prev, [peerId]: clamped };
+        peerVolumesRef.current = next;
+        const entry = peersRef.current.get(peerId);
+        if (entry) applyPeerAudioVolume(peerId, entry);
+        return next;
+      });
+    },
+    [applyPeerAudioVolume],
+  );
 
   const ensureAudioContext = useCallback(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -343,6 +373,7 @@ export function useVoiceChat({
       audioEl.volume = outputVolRef.current;
 
       const entry: PeerEntry = { pc, iceQueue: [], audioEl };
+      applyPeerAudioVolume(peerId, entry);
       peersRef.current.set(peerId, entry);
 
       const localStream = outStreamRef.current;
@@ -368,13 +399,19 @@ export function useVoiceChat({
           /* chờ cử chỉ người dùng nếu bị chặn */
         });
 
-        // Đo âm lượng của peer từ xa để bật vòng sáng xanh khi họ nói
+        // Đo âm lượng của peer từ xa để bật vòng sáng xanh khi họ nói + khuếch đại >100% nếu chỉnh to
         try {
           const ctx = ensureAudioContext();
           const src = ctx.createMediaStreamSource(remoteStream);
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 256;
+          const peerGain = ctx.createGain();
+          peerGain.gain.value = 0;
           src.connect(analyser);
+          src.connect(peerGain);
+          peerGain.connect(ctx.destination);
+          entry.gainNode = peerGain;
+          applyPeerAudioVolume(peerId, entry);
           const buf = new Uint8Array(analyser.frequencyBinCount);
           const timer = window.setInterval(() => {
             analyser.getByteFrequencyData(buf);
@@ -387,6 +424,7 @@ export function useVoiceChat({
             window.clearInterval(timer);
             try {
               src.disconnect();
+              peerGain.disconnect();
             } catch {
               /* ignore */
             }
@@ -510,11 +548,10 @@ export function useVoiceChat({
 
   // Cập nhật âm lượng Loa cho toàn bộ các peer
   useEffect(() => {
-    peersRef.current.forEach(({ audioEl }) => {
-      audioEl.volume = outputVolPct / 100;
-      audioEl.muted = deafened;
+    peersRef.current.forEach((entry, peerId) => {
+      applyPeerAudioVolume(peerId, entry);
     });
-  }, [outputVolPct, deafened]);
+  }, [outputVolPct, deafened, peerVolumes, applyPeerAudioVolume]);
 
   // Bật/tắt tiếng loopback khi bấm Test Mic
   useEffect(() => {
@@ -662,6 +699,8 @@ export function useVoiceChat({
     setMicGainPct,
     outputVolPct,
     setOutputVolPct,
+    peerVolumes,
+    setPeerVolume,
     speakingIds,
     peerStatuses,
     micDevices,

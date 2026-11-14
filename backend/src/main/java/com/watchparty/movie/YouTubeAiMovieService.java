@@ -32,10 +32,12 @@ public class YouTubeAiMovieService {
 
     private static final Logger log = LoggerFactory.getLogger(YouTubeAiMovieService.class);
     private static final Pattern SAFE_VIDEO_ID = Pattern.compile("^[A-Za-z0-9_-]{11}$");
+    private static final Pattern AI_TOPIC_KEYWORDS = Pattern.compile(
+            "(?iu)(phim\\s*ai|\\bai\\b|3d|tu\\s*tiên|tiên\\s*hiệp|xuyên\\s*không|trùng\\s*sinh|hệ\\s*thống|mạt\\s*thế|huyền\\s*huyễn|cổ\\s*đại|đại\\s*tống|mễ\\s*lạc)");
     private static final long CACHE_TTL_MS = Duration.ofMinutes(30).toMillis();
     private static final List<String> DEFAULT_AI_QUERIES = List.of(
             "Mễ Lạc Review phim AI",
-            "phim AI tiên hiệp xuyên không full"
+            "phim hoạt hình AI 3D tu tiên xuyên không full"
     );
 
     private record CachedList(List<MovieSummary> items, long expiresAt) {
@@ -64,12 +66,15 @@ public class YouTubeAiMovieService {
         return id != null && id.startsWith("yt-") && SAFE_VIDEO_ID.matcher(id.substring(3)).matches();
     }
 
-    /** Danh sách Phim AI mặc định từ các kênh/từ khóa YouTube phổ biến (có cache 30 phút). */
+    /** Danh sách Phim AI mặc định từ các kênh/từ khóa YouTube phổ biến (có lọc đúng chủ đề AI/Tiên hiệp/Xuyên không). */
     public List<MovieSummary> listDefaultAiMovies() {
         Map<String, MovieSummary> merged = new LinkedHashMap<>();
         for (String q : DEFAULT_AI_QUERIES) {
-            for (MovieSummary item : search(q, 12)) {
-                merged.putIfAbsent(item.id(), item);
+            for (MovieSummary item : search(q, 14)) {
+                String haystack = item.title() + " " + item.quality();
+                if (AI_TOPIC_KEYWORDS.matcher(haystack).find()) {
+                    merged.putIfAbsent(item.id(), item);
+                }
             }
         }
         return new ArrayList<>(merged.values());

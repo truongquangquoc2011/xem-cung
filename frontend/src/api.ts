@@ -1,4 +1,4 @@
-import type { MovieDetail, MoviePage, SkipSegment } from './types';
+import type { MovieDetail, MoviePage, RoomSummary, SkipSegment } from './types';
 
 /** Để trống khi chạy dev (Vite proxy) hoặc khi đóng gói chung 1 container. Khi deploy tách domain: VITE_API_URL=https://api.example.com */
 export const API_BASE: string = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -28,8 +28,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  createRoom: () => request<{ id: string }>('/api/rooms', { method: 'POST' }),
-  getRoom: (id: string) => request<{ id: string; memberCount: number }>(`/api/rooms/${encodeURIComponent(id)}`),
+  listRooms: () => request<RoomSummary[]>('/api/rooms'),
+  createRoom: (title?: string, pin?: string) =>
+    request<RoomSummary>('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title ?? '', pin: pin ?? '' }),
+    }),
+  getRoom: (id: string) => request<RoomSummary>(`/api/rooms/${encodeURIComponent(id)}`),
+  verifyRoomPin: (id: string, pin: string) =>
+    request<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(id)}/verify-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    }),
   searchMovies: (q: string, page = 1, category = '', period = '') => {
     const params = new URLSearchParams({ q, page: String(page) });
     if (category) params.set('category', category);
