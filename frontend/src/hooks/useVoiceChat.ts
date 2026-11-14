@@ -5,7 +5,10 @@ const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
+  iceCandidatePoolSize: 4,
 };
 
 interface Options {
@@ -23,6 +26,8 @@ interface PeerEntry {
   audioEl: HTMLAudioElement;
   gainNode?: GainNode;
   cleanupAnalyser?: () => void;
+  retryTimer?: number;
+  retryCount: number;
 }
 
 export interface AudioDeviceOption {
@@ -339,6 +344,7 @@ export function useVoiceChat({
   const closePeer = useCallback((peerId: string) => {
     const entry = peersRef.current.get(peerId);
     if (!entry) return;
+    if (entry.retryTimer) window.clearTimeout(entry.retryTimer);
     entry.cleanupAnalyser?.();
     entry.audioEl.pause();
     entry.audioEl.srcObject = null;
@@ -372,9 +378,30 @@ export function useVoiceChat({
       audioEl.muted = deafenedRef.current;
       audioEl.volume = outputVolRef.current;
 
-      const entry: PeerEntry = { pc, iceQueue: [], audioEl };
+      const entry: PeerEntry = { pc, iceQueue: [], audioEl, retryCount: 0 };
       applyPeerAudioVolume(peerId, entry);
       peersRef.current.set(peerId, entry);
+
+      const scheduleRetry = (delayMs: number) => {
+        if (entry.retryTimer) window.clearTimeout(entry.retryTimer);
+        if (entry.retryCount >= 3) return;
+        entry.retryTimer = window.setTimeout(() => {
+          const current = peersRef.current.get(peerId);
+          if (!current || current !== entry || !inVoiceRef.current) return;
+          if (current.pc.connectionState === 'connected') return;
+          const nextRetry = current.retryCount + 1;
+          const myId = meRef.current;
+          if (!myId) return;
+          if (myId < peerId) {
+            closePeer(peerId);
+            const fresh = getOrCreatePeer(peerId, true);
+            fresh.retryCount = nextRetry;
+          } else {
+            current.retryCount = nextRetry;
+            sendVoiceSignal(peerId, 'hello');
+          }
+        }, delayMs);
+      };
 
       const localStream = outStreamRef.current;
       if (localStream) {
@@ -389,7 +416,21 @@ export function useVoiceChat({
 
       pc.onconnectionstatechange = () => {
         setPeerStatuses((prev) => ({ ...prev, [peerId]: pc.connectionState }));
+        if (pc.connectionState === 'connected') {
+          if (entry.retryTimer) {
+            window.clearTimeout(entry.retryTimer);
+            entry.retryTimer = undefined;
+          }
+          entry.retryCount = 0;
+        } else if (pc.connectionState === 'failed') {
+          scheduleRetry(800);
+        } else if (pc.connectionState === 'disconnected') {
+          scheduleRetry(2500);
+        }
       };
+
+      // Nếu sau 8 giây vẫn kẹt ở "Đang đồng bộ…" thì tự thử kết nối lại
+      scheduleRetry(8000);
 
       pc.ontrack = (ev) => {
         const [remoteStream] = ev.streams;
@@ -448,7 +489,7 @@ export function useVoiceChat({
 
       return entry;
     },
-    [ensureAudioContext, sendVoiceSignal],
+    [closePeer, ensureAudioContext, sendVoiceSignal],
   );
 
   // Lắng nghe tín hiệu WebRTC từ các thành viên khác
@@ -467,9 +508,11 @@ export function useVoiceChat({
       if (!inVoiceRef.current) return;
 
       if (sig.type === 'hello') {
-        // Người mới vừa vào kênh thoại -> chủ động tạo kết nối và gửi Offer cho họ
-        closePeer(sig.from);
-        getOrCreatePeer(sig.from, true);
+        // Chỉ bên có ID nhỏ hơn chủ động tạo Offer để tránh 2 bên gửi Offer chéo làm rơi ICE
+        if (myId < sig.from) {
+          closePeer(sig.from);
+          getOrCreatePeer(sig.from, true);
+        }
         return;
       }
 
