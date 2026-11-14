@@ -3,6 +3,9 @@ import type { MovieDetail, MoviePage, RoomSummary, SkipSegment } from './types';
 /** Để trống khi chạy dev (Vite proxy) hoặc khi đóng gói chung 1 container. Khi deploy tách domain: VITE_API_URL=https://api.example.com */
 export const API_BASE: string = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
+/** URL Cloudflare Worker chuyên proxy HLS (.m3u8/.ts/.vtt) để không tốn băng thông backend. */
+export const HLS_PROXY_URL: string = (import.meta.env.VITE_HLS_PROXY_URL ?? '').replace(/\/$/, '');
+
 /** Gắn API_BASE vào đường dẫn tương đối (/api/...) khi deploy tách domain. */
 export function resolveApiUrl(url: string): string {
   if (!url) return url;
@@ -10,6 +13,22 @@ export function resolveApiUrl(url: string): string {
     return API_BASE + url;
   }
   return url;
+}
+
+/** Nếu đã cấu hình VITE_HLS_PROXY_URL (Cloudflare Worker), chuyển toàn bộ luồng HLS & phụ đề sang Worker. */
+export function resolveHlsUrl(url: string): string {
+  if (!url) return url;
+  if (HLS_PROXY_URL) {
+    const masterMatch = /\/api\/movies\/hls\/([^/]+)\/([^/]+)\/master\.m3u8/.exec(url);
+    if (masterMatch) {
+      return `${HLS_PROXY_URL}/master?host=${encodeURIComponent(masterMatch[1])}&hash=${encodeURIComponent(masterMatch[2])}`;
+    }
+    const vttMatch = /\/api\/movies\/hls\/vtt\?url=(.+)$/.exec(url);
+    if (vttMatch) {
+      return `${HLS_PROXY_URL}/vtt?url=${vttMatch[1]}`;
+    }
+  }
+  return resolveApiUrl(url);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -27,6 +46,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const detailCache = new Map<string, Promise<MovieDetail>>();
+
 export const api = {
   listRooms: () => request<RoomSummary[]>('/api/rooms'),
   createRoom: (title?: string, pin?: string) =>
@@ -42,17 +63,28 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin }),
     }),
-  searchMovies: (q: string, page = 1, category = '', period = '') => {
+  searchMovies: (q: string, page = 1, category = '', period = '', signal?: AbortSignal) => {
     const params = new URLSearchParams({ q, page: String(page) });
     if (category) params.set('category', category);
     if (period) params.set('period', period);
-    return request<MoviePage>(`/api/movies?${params.toString()}`);
+    return request<MoviePage>(`/api/movies?${params.toString()}`, { signal });
   },
   searchYouTube: (q: string) =>
     request<MoviePage>(`/api/movies/youtube?q=${encodeURIComponent(q)}`),
   searchAi: (q = '') =>
     request<MoviePage>(`/api/movies/ai?q=${encodeURIComponent(q)}`),
-  movieDetail: (id: string) => request<MovieDetail>(`/api/movies/${encodeURIComponent(id)}`),
+  movieDetail: (id: string) => {
+    // Nhớ chi tiết phim trong phiên: mở lại phim / hero banner không phải tải lại
+    const hit = detailCache.get(id);
+    if (hit) return hit;
+    const p = request<MovieDetail>(`/api/movies/${encodeURIComponent(id)}`).catch((e) => {
+      detailCache.delete(id);
+      throw e;
+    });
+    detailCache.set(id, p);
+    if (detailCache.size > 60) detailCache.delete(detailCache.keys().next().value as string);
+    return p;
+  },
   getSkipTimes: (title: string, originalTitle: string, episode: string) => {
     const params = new URLSearchParams({ title, originalTitle, episode });
     return request<SkipSegment[]>(`/api/movies/skip-times?${params.toString()}`);

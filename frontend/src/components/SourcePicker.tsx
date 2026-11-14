@@ -175,7 +175,7 @@ export function SourcePicker({
             <input
               value={ytInput}
               onChange={(e) => setYtInput(e.target.value)}
-              placeholder="Dán link YouTube, ví dụ https://youtu.be/…"
+              placeholder="Dán link YouTube…"
               disabled={disabled}
             />
             <button className="btn btn-primary" disabled={disabled || !ytInput.trim()}>
@@ -187,11 +187,11 @@ export function SourcePicker({
             <input
               value={ytSearchQuery}
               onChange={(e) => setYtSearchQuery(e.target.value)}
-              placeholder="Hoặc tìm video YouTube (VD: Mễ Lạc Review…)"
+              placeholder="Tìm video trên YouTube…"
               disabled={disabled}
             />
             <button className="btn btn-secondary" disabled={disabled || !ytSearchQuery.trim() || ytLoading}>
-              {ytLoading ? 'Đang tìm…' : 'Tìm YouTube'}
+              {ytLoading ? 'Đang tìm…' : 'Tìm'}
             </button>
           </form>
 
@@ -235,11 +235,11 @@ export function SourcePicker({
             <input
               value={aiQuery}
               onChange={(e) => setAiQuery(e.target.value)}
-              placeholder="Tìm Phim AI trên YouTube (VD: Mễ Lạc Review, tu tiên…)"
+              placeholder="Tìm Phim AI (VD: tu tiên…)"
               disabled={disabled}
             />
             <button className="btn btn-primary" disabled={disabled || aiLoading}>
-              {aiLoading ? 'Đang tìm…' : 'Tìm Phim AI'}
+              {aiLoading ? 'Đang tìm…' : 'Tìm'}
             </button>
           </form>
 

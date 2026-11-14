@@ -3,6 +3,10 @@ import { api } from '../api';
 import { HOT_PERIODS, MOVIE_CATEGORIES, type HotPeriod } from '../constants/movies';
 import type { MovieDetail, MoviePage, VideoSource } from '../types';
 import { toVideoSource } from '../utils';
+import { EpisodePicker } from './EpisodePicker';
+
+/** Chờ người dùng ngừng gõ bao lâu (ms) rồi mới tìm. */
+const SEARCH_DEBOUNCE_MS = 400;
 
 interface Props {
   onPick(source: VideoSource, movieDetail?: MovieDetail): void;
@@ -27,22 +31,40 @@ export function MovieLibrary({
   const [page, setPage] = useState(1);
   const [data, setData] = useState<MoviePage | null>(null);
   const [detail, setDetail] = useState<MovieDetail | null>(initialDetail);
-  const [episodeFilter, setEpisodeFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Gõ tới đâu tìm tới đó (debounce), không cần bấm "Tìm"
   useEffect(() => {
-    let cancelled = false;
+    const q = query.trim();
+    if (q === submitted || (q.length > 0 && q.length < 2)) return;
+    const t = window.setTimeout(() => {
+      setDetail(null);
+      setPage(1);
+      setSubmitted(q);
+      if (q) {
+        setCategory('');
+        setPeriod('');
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [query, submitted]);
+
+  useEffect(() => {
+    // Huỷ request cũ khi đổi từ khoá / trang: không tốn băng thông, không bị kết quả cũ đè kết quả mới
+    const ctrl = new AbortController();
     setLoading(true);
     setError(null);
     api
-      .searchMovies(submitted, page, category, period)
-      .then((d) => !cancelled && setData(d))
-      .catch((e: Error) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
+      .searchMovies(submitted, page, category, period, ctrl.signal)
+      .then((d) => setData(d))
+      .catch((e: Error) => {
+        if (e.name !== 'AbortError') setError(e.message);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoading(false);
+      });
+    return () => ctrl.abort();
   }, [submitted, page, category, period]);
 
   useEffect(() => {
@@ -54,7 +76,6 @@ export function MovieLibrary({
   const openDetail = (id: string) => {
     setLoading(true);
     setError(null);
-    setEpisodeFilter('');
     api
       .movieDetail(id)
       .then((d) => {
@@ -94,14 +115,6 @@ export function MovieLibrary({
     setPeriod((cur) => (cur === next ? '' : next));
   };
 
-  const filteredEpisodes = detail
-    ? detail.episodes.filter((ep) =>
-        episodeFilter.trim()
-          ? ep.name.toLowerCase().includes(episodeFilter.trim().toLowerCase())
-          : true,
-      )
-    : [];
-
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-label="Kho phim">
@@ -109,10 +122,7 @@ export function MovieLibrary({
           {detail ? (
             <button
               className="btn btn-ghost"
-              onClick={() => {
-                setDetail(null);
-                setEpisodeFilter('');
-              }}
+              onClick={() => setDetail(null)}
             >
               ← Danh sách
             </button>
@@ -127,7 +137,15 @@ export function MovieLibrary({
         {!detail && (
           <div className="library-controls">
             <form className="search-row" onSubmit={search}>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm tên phim…" autoFocus />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Tìm phim (có dấu hay không đều được)…"
+                aria-label="Tìm tên phim"
+                maxLength={80}
+                autoFocus
+              />
               <button className="btn btn-primary">Tìm</button>
             </form>
 
@@ -195,51 +213,29 @@ export function MovieLibrary({
                 <h3>{detail.title}</h3>
                 {detail.year && <p className="muted">{detail.year}</p>}
                 {detail.description && <p className="detail-desc">{detail.description}</p>}
-                <div className="ep-head-row">
-                  <h4>{detail.episodes.length > 1 ? `Chọn tập (${detail.episodes.length} tập)` : 'Phát'}</h4>
-                  {detail.episodes.length > 8 && (
-                    <input
-                      className="ep-filter-input"
-                      value={episodeFilter}
-                      onChange={(e) => setEpisodeFilter(e.target.value)}
-                      placeholder="Lọc số tập…"
-                      aria-label="Lọc nhanh số tập"
-                    />
-                  )}
-                </div>
-                {detail.episodes.length === 0 && <p className="muted">Phim này không có bản phát được trên web.</p>}
-                <div className="episode-list">
-                  {filteredEpisodes.map((ep) => {
-                    const isPlaying = playingUrl === ep.url;
-                    return (
-                      <button
-                        key={`${ep.name}-${ep.url}`}
-                        className={`btn ${isPlaying ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => {
-                          onRememberDetail?.(detail);
-                          onPick(
-                            toVideoSource(
-                              ep.url,
-                              detail.episodes.length > 1 ? `${detail.title} · ${ep.name}` : detail.title,
-                            ),
-                            detail,
-                          );
-                        }}
-                      >
-                        {isPlaying ? '▶ ' : ''}
-                        {detail.episodes.length > 1 ? ep.name : 'Chiếu cho cả phòng'}
-                        {isPlaying ? ' (Đang chiếu)' : ''}
-                      </button>
+                <EpisodePicker
+                  key={detail.id}
+                  episodes={detail.episodes}
+                  playingUrl={playingUrl}
+                  onPick={(ep) => {
+                    onRememberDetail?.(detail);
+                    onPick(
+                      toVideoSource(ep.url, detail.episodes.length > 1 ? `${detail.title} · ${ep.name}` : detail.title),
+                      detail,
                     );
-                  })}
-                </div>
+                  }}
+                />
               </div>
             </div>
           )}
 
           {!loading && !detail && data && (
             <>
-              {data.items.length === 0 && <p className="muted">Không tìm thấy phim nào.</p>}
+              {data.items.length === 0 && (
+                <p className="muted">
+                  {submitted ? `Không tìm thấy phim nào cho “${submitted}”. Thử bỏ bớt từ hoặc gõ tên gốc.` : 'Không tìm thấy phim nào.'}
+                </p>
+              )}
               <div className="movie-grid">
                 {data.items.map((m, idx) => (
                   <button key={m.id} className="movie-card" onClick={() => openDetail(m.id)}>

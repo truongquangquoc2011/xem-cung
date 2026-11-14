@@ -66,7 +66,10 @@ public class Room {
         if (!hasPin()) {
             return true;
         }
-        return pin.equals(candidate == null ? "" : candidate.strip());
+        // So sánh thời gian hằng số: không lộ PIN qua thời gian phản hồi
+        byte[] expected = pin.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] actual = (candidate == null ? "" : candidate.strip()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return java.security.MessageDigest.isEqual(expected, actual);
     }
 
     public long getLastActive() {
@@ -86,7 +89,8 @@ public class Room {
     }
 
     public synchronized RoomSummary summary() {
-        String playingTitle = state != null && state.source() != null ? state.source().title() : null;
+        // Phòng khoá PIN: không lộ tên phim đang chiếu ra sảnh công khai
+        String playingTitle = !hasPin() && state != null && state.source() != null ? state.source().title() : null;
         return new RoomSummary(id, title, members.size(), hasPin(), pinned, playingTitle);
     }
 

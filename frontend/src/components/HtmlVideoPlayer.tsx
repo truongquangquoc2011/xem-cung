@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { resolveApiUrl } from '../api';
+import { resolveApiUrl, resolveHlsUrl } from '../api';
 import type { PlayerHandle } from '../types';
 import type { PlayerCallbacks } from './VideoPlayer';
 
@@ -174,14 +174,14 @@ export function HtmlVideoPlayer({
     const video = videoRef.current;
     if (!video) return;
     let hls: Hls | null = null;
-    const playUrl = resolveApiUrl(url);
+    const playUrl = resolveHlsUrl(url);
     setBuffering(true);
     setCurrentTime(0);
     setDuration(0);
     setBufferedEnd(0);
     setScrubTime(null);
 
-    const isHls = /\.m3u8(\?|#|$)/i.test(playUrl);
+    const isHls = /\.m3u8(\?|#|$)|\/master\?/i.test(playUrl);
     if (isHls && Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
@@ -383,7 +383,7 @@ export function HtmlVideoPlayer({
           <track
             key={sub.url}
             kind="subtitles"
-            src={sub.url}
+            src={resolveHlsUrl(sub.url)}
             srcLang={sub.lang}
             label={sub.label}
             default={sub.isDefault}

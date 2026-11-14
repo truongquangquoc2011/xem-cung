@@ -1,5 +1,15 @@
 server:
   port: ${PORT:8080}
+  # Lấy IP thật của client khi chạy sau proxy (Render, Cloudflare) — dùng cho giới hạn đoán PIN / tạo phòng
+  forward-headers-strategy: native
+  # Nén gzip JSON / JS / CSS / playlist: giảm 60-80% dung lượng truyền
+  compression:
+    enabled: true
+    min-response-size: 1KB
+    mime-types: application/json,application/javascript,text/javascript,text/css,text/html,text/plain,image/svg+xml,application/vnd.apple.mpegurl,text/vtt
+  error:
+    include-message: never
+    include-stacktrace: never
 
 spring:
   jackson:
@@ -7,7 +17,11 @@ spring:
 
 app:
   # Origin được phép gọi REST/WebSocket. Khi deploy nên đổi thành domain frontend thật.
-  allowed-origins: "*"
+  # Ví dụ: ALLOWED_ORIGINS=https://xem-cung.vercel.app,https://xem-cung.pages.dev
+  allowed-origins: ${ALLOWED_ORIGINS:*}
+  # URL Cloudflare Worker chuyên proxy HLS (.m3u8/.ts/.vtt) để không tốn băng thông backend
+  # Ví dụ: HLS_PROXY_URL=https://xem-cung-hls.your-name.workers.dev
+  hls-proxy-url: ${HLS_PROXY_URL:}
 
 movies:
   # Nguồn phim dùng cho "Kho phim":

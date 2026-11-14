@@ -15,6 +15,10 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import com.watchparty.security.AbuseGuard;
+import com.watchparty.security.ClientIp;
+import com.watchparty.security.TooManyRequestsException;
+
 /**
  * Xử lý tin nhắn realtime của phòng.
  * Mỗi kết nối WebSocket chỉ ở trong 1 phòng; roomId lưu trong session attributes.
@@ -28,10 +32,12 @@ public class RoomSocketController {
 
     private final RoomService rooms;
     private final SimpMessagingTemplate broker;
+    private final AbuseGuard guard;
 
-    public RoomSocketController(RoomService rooms, SimpMessagingTemplate broker) {
+    public RoomSocketController(RoomService rooms, SimpMessagingTemplate broker, AbuseGuard guard) {
         this.rooms = rooms;
         this.broker = broker;
+        this.guard = guard;
     }
 
     @MessageMapping("/room/{roomId}/join")
@@ -40,11 +46,17 @@ public class RoomSocketController {
                              SimpMessageHeaderAccessor headers) {
         String sid = headers.getSessionId();
         Room room = rooms.get(roomId);
-        if (!room.checkPin(req == null ? null : req.pin())) {
-            throw new IllegalArgumentException("Mã PIN phòng không đúng");
+        Map<String, Object> attrs = headers.getSessionAttributes();
+        String client = clientKey(attrs, sid);
+        if (room.hasPin()) {
+            guard.checkPinAllowed(client, room.getId());
+            if (!room.checkPin(req == null ? null : req.pin())) {
+                guard.recordPinFailure(client, room.getId());
+                throw new IllegalArgumentException("Mã PIN phòng không đúng");
+            }
+            guard.recordPinSuccess(client, room.getId());
         }
 
-        Map<String, Object> attrs = headers.getSessionAttributes();
         Object previous = attrs.get(ATTR_ROOM);
         if (previous != null && !previous.equals(room.getId())) {
             leave(previous.toString(), sid);
@@ -63,6 +75,7 @@ public class RoomSocketController {
                         SimpMessageHeaderAccessor headers) {
         Room room = rooms.get(roomId);
         Member m = requireMember(room, headers);
+        guard.checkControl(headers.getSessionId());
         long now = System.currentTimeMillis();
         PlaybackState state = room.control(req, now);
         publish(room, RoomEvent.state(state, m.name(), now));
@@ -76,13 +89,14 @@ public class RoomSocketController {
     public void chat(@DestinationVariable String roomId, Requests.Chat req, SimpMessageHeaderAccessor headers) {
         Room room = rooms.get(roomId);
         Member m = requireMember(room, headers);
+        guard.checkChat(headers.getSessionId());
         publishChat(room, room.addChat("USER", m.name(), req == null ? null : req.text()));
     }
 
     @MessageMapping("/room/{roomId}/voice/state")
     public void voiceState(@DestinationVariable String roomId, Requests.VoiceState req,
                            SimpMessageHeaderAccessor headers) {
-        if (req == null) return;
+        if (req == null || !guard.allowVoice(headers.getSessionId())) return;
         Room room = rooms.get(roomId);
         Member prev = requireMember(room, headers);
         Member updated = room.updateVoiceState(headers.getSessionId(), req.inVoice(), req.muted(), req.deafened());
@@ -100,7 +114,7 @@ public class RoomSocketController {
     @MessageMapping("/room/{roomId}/voice/signal")
     public void voiceSignal(@DestinationVariable String roomId, Requests.VoiceSignal req,
                             SimpMessageHeaderAccessor headers) {
-        if (req == null || req.type() == null) return;
+        if (req == null || req.type() == null || !guard.allowVoice(headers.getSessionId())) return;
         Room room = rooms.get(roomId);
         Member sender = requireMember(room, headers);
         long now = System.currentTimeMillis();
@@ -117,13 +131,15 @@ public class RoomSocketController {
         if (roomId != null) {
             leave(roomId.toString(), event.getSessionId());
         }
+        guard.forgetSession(event.getSessionId());
     }
 
     @MessageExceptionHandler
     @SendToUser(destinations = "/queue/errors", broadcast = false)
     public Map<String, String> handleError(Exception e) {
         log.debug("Lỗi xử lý tin nhắn: {}", e.getMessage());
-        String message = (e instanceof IllegalArgumentException || e instanceof RoomNotFoundException)
+        String message = (e instanceof IllegalArgumentException || e instanceof RoomNotFoundException
+                || e instanceof TooManyRequestsException)
                 ? e.getMessage() : "Có lỗi xảy ra";
         return Map.of("message", message);
     }
@@ -155,6 +171,11 @@ public class RoomSocketController {
 
     private void publish(Room room, RoomEvent event) {
         broker.convertAndSend("/topic/room/" + room.getId(), event);
+    }
+
+    private static String clientKey(Map<String, Object> attrs, String sid) {
+        Object ip = attrs == null ? null : attrs.get(ClientIp.SESSION_ATTR);
+        return ip == null ? "ws:" + sid : ip.toString();
     }
 
     private static String cleanName(String name) {

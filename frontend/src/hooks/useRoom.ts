@@ -95,7 +95,8 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
         } else if (event.type === 'VOICE' && event.voice) {
           voiceListenerRef.current?.(event.voice);
         }
-      });
+        // Phòng khoá PIN: server chỉ cho nghe kênh phòng khi có PIN đúng (chống nghe lén)
+      }, { pin: pin ?? '' });
 
       client.publish({ destination: `/app/room/${roomId}/join`, body: JSON.stringify({ name, pin: pin ?? '' }) });
     };

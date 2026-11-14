@@ -23,6 +23,8 @@ public class RoomService {
     private static final String ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int ID_LENGTH = 6;
     private static final Duration EMPTY_ROOM_TTL = Duration.ofHours(24);
+    /** Trần số phòng trong RAM, chống bị spam tạo phòng làm đầy bộ nhớ. */
+    private static final int MAX_ROOMS = 500;
 
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
@@ -51,6 +53,12 @@ public class RoomService {
         String cleanPin = pin == null ? "" : pin.strip();
         if (cleanPin.length() > 20) {
             cleanPin = cleanPin.substring(0, 20);
+        }
+        if (rooms.size() >= MAX_ROOMS) {
+            cleanup();
+            if (rooms.size() >= MAX_ROOMS) {
+                throw new com.watchparty.security.TooManyRequestsException("Server đang quá nhiều phòng, thử lại sau.");
+            }
         }
         while (true) {
             String id = randomId();

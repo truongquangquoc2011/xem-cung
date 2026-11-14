@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { EpisodePicker } from '../components/EpisodePicker';
 import { Logo } from '../components/Logo';
 import { PosterRow } from '../components/PosterRow';
 import { HOT_PERIODS, MOVIE_CATEGORIES, type HotPeriod } from '../constants/movies';
@@ -39,7 +40,6 @@ export function HomePage() {
 
   // Chọn tập cho phim nhiều tập trước khi tạo phòng
   const [pickedDetail, setPickedDetail] = useState<MovieDetail | null>(null);
-  const [epFilter, setEpFilter] = useState('');
 
   // Hero carousel ưu tiên phim Việt Nam & Anime nổi bật
   interface HeroSlide {
@@ -53,6 +53,8 @@ export function HomePage() {
   const [heroDetails, setHeroDetails] = useState<Record<string, MovieDetail>>({});
 
   const refreshRooms = () => {
+    // Tab đang ẩn thì không gọi (đỡ tốn mạng / pin điện thoại)
+    if (document.hidden) return;
     api.listRooms().then(setRooms).catch(() => {});
   };
 
@@ -74,12 +76,6 @@ export function HomePage() {
         if (animeList[i]) combined.push({ movie: animeList[i], tag: 'hoat-hinh', tagLabel: 'Anime Nổi Bật' });
       }
       setHeroSlides(combined);
-      combined.forEach((slide) => {
-        api
-          .movieDetail(slide.movie.id)
-          .then((d) => setHeroDetails((prev) => ({ ...prev, [slide.movie.id]: d })))
-          .catch(() => {});
-      });
     });
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -87,6 +83,29 @@ export function HomePage() {
       window.clearInterval(roomTimer);
       window.removeEventListener('scroll', onScroll);
     };
+  }, []);
+
+  // Chỉ tải chi tiết phim đang hiện trên banner (trước đây tải cùng lúc cả 6 phim)
+  const activeHeroId = heroSlides[heroIndex]?.movie.id;
+  useEffect(() => {
+    if (!activeHeroId || heroDetails[activeHeroId]) return;
+    let cancelled = false;
+    api
+      .movieDetail(activeHeroId)
+      .then((d) => !cancelled && setHeroDetails((prev) => ({ ...prev, [activeHeroId]: d })))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeHeroId, heroDetails]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) refreshRooms();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -230,8 +249,7 @@ export function HomePage() {
         await createRoom(m.id, toVideoSource(ep.url, d.title), d);
         return;
       }
-      setEpFilter('');
-      setPickedDetail(d);
+            setPickedDetail(d);
       setBusy(null);
     } catch (e) {
       setError((e as Error).message);
@@ -271,12 +289,6 @@ export function HomePage() {
     setBrowsePage(1);
     setSelectedCategory(slug);
   };
-
-  const filteredEpisodes = pickedDetail
-    ? pickedDetail.episodes.filter((ep) =>
-        epFilter.trim() ? ep.name.toLowerCase().includes(epFilter.trim().toLowerCase()) : true,
-      )
-    : [];
 
   return (
     <div className="home">
@@ -362,8 +374,7 @@ export function HomePage() {
                   disabled={!!busy}
                   onClick={async () => {
                     if (activeDetail) {
-                      setEpFilter('');
-                      setPickedDetail(activeDetail);
+                                            setPickedDetail(activeDetail);
                     } else {
                       await watchMovie(activeSlide.movie);
                     }
@@ -376,6 +387,7 @@ export function HomePage() {
           </div>
 
           <div className="hero-room-bar">
+            <p className="room-bar-label">Mở phòng chiếu của bạn</p>
             <input
               ref={nameRef}
               value={name}
@@ -435,10 +447,8 @@ export function HomePage() {
         <section className="home-rooms-section" aria-label="Danh sách phòng đang mở và phòng tạo sẵn">
           <div className="rooms-sec-head">
             <div>
-              <h2 className="row-title">🚪 Sảnh Phòng Chiếu &amp; Phòng Tạo Sẵn</h2>
-              <p className="rooms-sec-sub">
-                Vào ngay các phòng cố định 24/7 hoặc tham gia phòng do mọi người vừa tạo (hỗ trợ khoá mã PIN riêng tư)
-              </p>
+              <h2 className="row-title">Phòng đang mở</h2>
+              <p className="rooms-sec-sub">Sảnh chiếu 24/7 và phòng mọi người vừa tạo · có thể khoá PIN</p>
             </div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={refreshRooms}>
               ↻ Làm mới
@@ -467,7 +477,9 @@ export function HomePage() {
                   <span className="room-code-pill">#{r.id}</span>
                 </div>
 
-                <h3 className="room-lobby-title">{r.title}</h3>
+                <h3 className="room-lobby-title" title={r.title}>
+                  {r.title}
+                </h3>
 
                 <p className="room-lobby-playing" title={r.playingTitle || 'Đang chờ chọn phim'}>
                   {r.playingTitle ? `🎬 ${r.playingTitle}` : '🍿 Đang chờ chọn phim…'}
@@ -683,36 +695,21 @@ export function HomePage() {
                   <h3>{pickedDetail.title}</h3>
                   {pickedDetail.year && <p className="muted">{pickedDetail.year}</p>}
                   {pickedDetail.description && <p className="detail-desc">{pickedDetail.description}</p>}
-                  <div className="ep-head-row">
-                    <h4>Chọn tập ({pickedDetail.episodes.length} tập)</h4>
-                    {pickedDetail.episodes.length > 8 && (
-                      <input
-                        className="ep-filter-input"
-                        value={epFilter}
-                        onChange={(e) => setEpFilter(e.target.value)}
-                        placeholder="Lọc số tập…"
-                        aria-label="Lọc nhanh số tập"
-                      />
-                    )}
-                  </div>
-                  <div className="episode-list">
-                    {filteredEpisodes.map((ep) => (
-                      <button
-                        key={`${ep.name}-${ep.url}`}
-                        className="btn btn-secondary"
-                        disabled={!!busy}
-                        onClick={() =>
-                          void createRoom(
-                            pickedDetail.id,
-                            toVideoSource(ep.url, `${pickedDetail.title} · ${ep.name}`),
-                            pickedDetail,
-                          )
-                        }
-                      >
-                        ▶ {ep.name}
-                      </button>
-                    ))}
-                  </div>
+                  <EpisodePicker
+                    key={pickedDetail.id}
+                    episodes={pickedDetail.episodes}
+                    disabled={!!busy}
+                    onPick={(ep) =>
+                      void createRoom(
+                        pickedDetail.id,
+                        toVideoSource(
+                          ep.url,
+                          pickedDetail.episodes.length > 1 ? `${pickedDetail.title} · ${ep.name}` : pickedDetail.title,
+                        ),
+                        pickedDetail,
+                      )
+                    }
+                  />
                 </div>
               </div>
             </div>
@@ -730,7 +727,10 @@ export function HomePage() {
             <header className="modal-head">
               <div>
                 <p className="kicker">🔒 Phòng Riêng Tư</p>
-                <h3>{pinModalRoom.title} (#{pinModalRoom.id})</h3>
+                <h3 className="pin-modal-title" title={pinModalRoom.title}>
+                  {pinModalRoom.title}
+                </h3>
+                <span className="room-code-pill">#{pinModalRoom.id}</span>
               </div>
               <button className="btn btn-ghost" onClick={() => setPinModalRoom(null)} aria-label="Đóng">
                 ✕

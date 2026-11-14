@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { nextEpisode } from '../episodes';
 import { Chat } from '../components/Chat';
 import { Logo } from '../components/Logo';
 import { MovieLibrary } from '../components/MovieLibrary';
@@ -156,14 +157,12 @@ export function RoomPage() {
   const titleParts = source?.title?.split(' · ') ?? [];
   const movieTitle = rememberedMovie?.title || titleParts[0] || source?.title || '';
   const episodeTitle = titleParts.length > 1 ? titleParts[titleParts.length - 1] : '';
-  const currentEpIndex =
-    rememberedMovie && source?.type === 'video'
-      ? rememberedMovie.episodes.findIndex((ep) => ep.url === source.url)
-      : -1;
-  const nextEp =
-    rememberedMovie && currentEpIndex >= 0 && currentEpIndex + 1 < rememberedMovie.episodes.length
-      ? rememberedMovie.episodes[currentEpIndex + 1]
-      : null;
+  // Tập tiếp theo trong CÙNG bản (Vietsub -> Vietsub), sắp theo số tập chứ không theo thứ tự danh sách gốc
+  const nextEp = useMemo(
+    () =>
+      rememberedMovie && source?.type === 'video' ? nextEpisode(rememberedMovie.episodes, source.url) : null,
+    [rememberedMovie, source?.type, source?.url],
+  );
 
   const handleNextEpisode = () => {
     if (!nextEp || !rememberedMovie || !connected) return;
@@ -370,7 +369,10 @@ export function RoomPage() {
           <Logo />
           <div className="ticket-stub">
             <span className="kicker">{roomMeta?.hasPin ? '🔒 Phòng khoá PIN' : 'Vé vào phòng'}</span>
-            <strong className="ticket-code">{roomMeta?.title ? `${roomMeta.title} (#${id})` : id}</strong>
+            <strong className="ticket-code" title={roomMeta?.title || id}>
+              {roomMeta?.title || id}
+            </strong>
+            {roomMeta?.title && <span className="ticket-id">#{id}</span>}
           </div>
           <h1>{roomMeta?.hasPin ? 'Nhập tên & Mã PIN' : 'Bạn tên gì?'}</h1>
           <input
@@ -411,10 +413,12 @@ export function RoomPage() {
         <Logo />
         <div className="room-pill">
           <span className="kicker">{room.hasPin || roomMeta?.hasPin ? '🔒 Phòng' : 'Phòng'}</span>
-          <strong>{room.roomTitle || roomMeta?.title || id}</strong>
+          <strong className="room-pill-title" title={room.roomTitle || roomMeta?.title || id}>
+            {room.roomTitle || roomMeta?.title || id}
+          </strong>
           <span className="room-pill-code">#{id}</span>
           <button className="pill-btn" onClick={copyLink}>
-            {copied ? 'Đã chép ✓' : 'Chép link mời'}
+            {copied ? 'Đã chép ✓' : 'Mời bạn'}
           </button>
         </div>
 

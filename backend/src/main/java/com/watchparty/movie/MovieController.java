@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,8 @@ public class MovieController {
     private final MovieProvider provider;
     private final AniSkipService aniSkipService;
     private final YouTubeAiMovieService youTubeAiMovieService;
+    private final SmartMovieSearch smartSearch;
+    private final String hlsProxyUrl;
     private final RestClient proxyHttp;
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -68,10 +71,13 @@ public class MovieController {
     private final Map<String, List<SubtitleTrack>> subtitleCache = new ConcurrentHashMap<>();
 
     public MovieController(MovieProvider provider, AniSkipService aniSkipService,
-                           YouTubeAiMovieService youTubeAiMovieService) {
+                           YouTubeAiMovieService youTubeAiMovieService, SmartMovieSearch smartSearch,
+                           @Value("${app.hls-proxy-url:}") String hlsProxyUrl) {
         this.provider = provider;
         this.aniSkipService = aniSkipService;
         this.youTubeAiMovieService = youTubeAiMovieService;
+        this.smartSearch = smartSearch;
+        this.hlsProxyUrl = hlsProxyUrl == null ? "" : hlsProxyUrl.strip().replaceAll("/+$", "");
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_2)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -108,8 +114,8 @@ public class MovieController {
             return base;
         }
 
-        // Tìm kiếm trong Kho phim: chỉ tìm từ nguồn phim (Nguồn C)
-        return provider.search(cleanQ, cleanCat, period, page);
+        // Tìm kiếm thông minh: không dấu, bỏ từ nhiễu, gần đúng, xếp hạng + cache ngắn hạn
+        return smartSearch.search(cleanQ, cleanCat, period, page);
     }
 
     /** Tìm kiếm video trực tiếp trên YouTube (dùng cho tab YouTube trong phòng). */
@@ -145,7 +151,7 @@ public class MovieController {
         if (youTubeAiMovieService.isYouTubeMovieId(id)) {
             return youTubeAiMovieService.detail(id);
         }
-        return provider.detail(id);
+        return smartSearch.detail(id);
     }
 
     @GetMapping("/skip-times")
@@ -293,11 +299,12 @@ public class MovieController {
             throw new IllegalArgumentException("Không tải được playlist HLS");
         }
 
+        String segPrefix = hlsProxyUrl.isEmpty() ? "../../segment" : (hlsProxyUrl + "/seg");
         Matcher m = SEGMENT_URL.matcher(m3u8);
         StringBuilder rewritten = new StringBuilder(m3u8.length() + 4096);
         while (m.find()) {
             String segUrl = m.group().strip();
-            String proxied = "../../segment?host="
+            String proxied = segPrefix + "?host="
                     + java.net.URLEncoder.encode(host, StandardCharsets.UTF_8)
                     + "&url="
                     + java.net.URLEncoder.encode(segUrl, StandardCharsets.UTF_8);
@@ -375,25 +382,9 @@ public class MovieController {
                     .body(cached);
         }
 
-        URI uri;
-        try {
-            uri = URI.create(url);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("URL segment không hợp lệ");
-        }
+        // Chống SSRF: kiểm tra IP thật sau khi phân giải DNS (chặn mọi dải mạng nội bộ / metadata cloud)
+        URI uri = PublicUrlGuard.requirePublicHttpUrl(url);
         String segHost = uri.getHost();
-        if (segHost == null || (! "https".equalsIgnoreCase(uri.getScheme()) && ! "http".equalsIgnoreCase(uri.getScheme()))) {
-            throw new IllegalArgumentException("Host segment không hợp lệ");
-        }
-        // Chặn truy cập mạng nội bộ (SSRF protection)
-        if ("localhost".equalsIgnoreCase(segHost)
-                || segHost.startsWith("127.")
-                || segHost.startsWith("10.")
-                || segHost.startsWith("192.168.")
-                || segHost.startsWith("169.254.")
-                || "0.0.0.0".equals(segHost)) {
-            throw new IllegalArgumentException("Host segment không được phép");
-        }
 
         String originHost = SAFE_HOST.matcher(host).matches()
                 ? (host.endsWith(".streamvsmov.com") ? "v10.streamvsmov.com" : host)
