@@ -86,28 +86,35 @@ export function DesktopUpdateBanner() {
   return (
     <div
       style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        padding: '8px 16px',
-        background: 'linear-gradient(90deg, #b91c1c, #e50914)',
+        gap: '10px',
+        padding: '10px 14px',
+        borderRadius: '12px',
+        background: 'linear-gradient(135deg, #181826 0%, #24121d 100%)',
+        border: '1px solid rgba(229, 9, 20, 0.45)',
+        boxShadow: '0 14px 36px rgba(0, 0, 0, 0.65)',
         color: '#fff',
         fontSize: '13px',
         fontWeight: 500,
+        maxWidth: 'calc(100vw - 32px)',
         zIndex: 9999,
       }}
     >
-      <span>🚀 Đã có bản cập nhật mới v{update.version} cho Xem Cùng Desktop!</span>
+      <span>🚀 Có bản mới <strong>v{update.version}</strong></span>
       <a
         href={update.url}
         target="_blank"
         rel="noreferrer"
         style={{
-          background: '#fff',
-          color: '#b91c1c',
-          padding: '3px 10px',
-          borderRadius: '6px',
+          background: '#e50914',
+          color: '#fff',
+          padding: '5px 12px',
+          borderRadius: '8px',
           fontWeight: 700,
           textDecoration: 'none',
         }}
@@ -118,11 +125,11 @@ export function DesktopUpdateBanner() {
         type="button"
         onClick={() => setDismissed(true)}
         style={{
-          background: 'transparent',
-          border: '1px solid rgba(255,255,255,0.45)',
-          color: '#fff',
-          padding: '2px 8px',
-          borderRadius: '6px',
+          background: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.2)',
+          color: '#d1d5db',
+          padding: '4px 10px',
+          borderRadius: '8px',
           cursor: 'pointer',
           fontSize: '12px',
         }}
