@@ -368,8 +368,16 @@ export function RoomPage() {
   }, [room.chat, serverNow]);
 
   const copyLink = async () => {
+    const isTauri =
+      window.location.hostname === 'tauri.localhost' ||
+      window.location.protocol === 'tauri:' ||
+      '__TAURI_INTERNALS__' in window ||
+      '__TAURI__' in window;
+    const shareOrigin = isTauri
+      ? (import.meta.env.VITE_PUBLIC_WEB_URL || 'https://xem-cung.vercel.app').replace(/\/$/, '')
+      : window.location.origin;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/room/${id}`);
+      await navigator.clipboard.writeText(`${shareOrigin}/room/${id}`);
     } catch {
       /* clipboard bị chặn */
     }

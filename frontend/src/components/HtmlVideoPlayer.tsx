@@ -208,6 +208,7 @@ export function HtmlVideoPlayer({
 
     const isHls = /\.m3u8(\?|#|$)|\/master\?/i.test(playUrl);
     if (isHls && Hls.isSupported()) {
+      let useLocalProxy = Boolean(cachedLocalProxyBase);
       hls = new Hls({
         enableWorker: true,
         startFragPrefetch: true,
@@ -218,7 +219,7 @@ export function HtmlVideoPlayer({
         fragLoadingTimeOut: 25000,
         fragLoadingMaxRetry: 6,
         xhrSetup: (xhr, reqUrl) => {
-          if (cachedLocalProxyBase && reqUrl.includes('/api/seg?')) {
+          if (useLocalProxy && cachedLocalProxyBase && reqUrl.includes('/api/seg?')) {
             const qIdx = reqUrl.indexOf('/api/seg?');
             xhr.open('GET', `${cachedLocalProxyBase}${reqUrl.slice(qIdx + 4)}`, true);
           }
@@ -229,6 +230,21 @@ export function HtmlVideoPlayer({
         networkRetries = 0;
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
+        // Nếu proxy Rust cục bộ bị CDN chặn (403/502 Cloudflare TLS check), tự chuyển sang proxy web ngay
+        const reqUrl = (data as { url?: string; context?: { url?: string } }).url ??
+          (data as { context?: { url?: string } }).context?.url ?? '';
+        const httpCode = (data as { response?: { code?: number } }).response?.code ?? 0;
+        if (
+          useLocalProxy &&
+          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          (reqUrl.startsWith('http://127.0.0.1:') || httpCode === 403 || httpCode === 502)
+        ) {
+          useLocalProxy = false;
+          if (data.fatal) {
+            hls?.startLoad();
+          }
+          return;
+        }
         if (!data.fatal) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 3) {
           networkRetries++;
