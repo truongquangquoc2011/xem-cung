@@ -2296,10 +2296,74 @@ input:disabled {
 .cp-center {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 4;
   display: grid;
   place-items: center;
   pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.cp-wrap.hud-off .cp-center {
+  opacity: 0;
+}
+
+.cp-center-controls {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  pointer-events: auto;
+}
+
+.cp-wrap.hud-off .cp-center-controls {
+  pointer-events: none;
+}
+
+.cp-center-play,
+.cp-center-seek {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.14s ease, background 0.14s ease;
+}
+
+.cp-center-play {
+  width: 64px;
+  height: 64px;
+  background: rgba(12, 12, 18, 0.62);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+.cp-center-seek {
+  width: 48px;
+  height: 48px;
+  background: rgba(12, 12, 18, 0.48);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.cp-center-seek span {
+  position: absolute;
+  font-size: 9.5px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.cp-center-play:hover,
+.cp-center-seek:hover {
+  background: rgba(229, 35, 47, 0.82);
+  transform: scale(1.08);
+}
+
+.cp-center-play:active,
+.cp-center-seek:active {
+  transform: scale(0.95);
 }
 
 .cp-spinner {
@@ -2685,7 +2749,8 @@ input:disabled {
 }
 
 .side-col .chat {
-  flex: 1;
+  flex: 1 1 260px;
+  min-height: 240px;
   border-left: 0;
 }
 
@@ -2728,7 +2793,8 @@ input:disabled {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(24, 25, 30, 0.96), rgba(14, 15, 18, 0.96));
-  max-height: 55vh;
+  max-height: 40vh;
+  flex-shrink: 0;
   overflow-y: auto;
 }
 
@@ -2842,6 +2908,9 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 195px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .voice-empty {
@@ -3460,6 +3529,19 @@ input:disabled {
   border-radius: 0 !important;
   border: 0 !important;
   background: #000 !important;
+}
+
+/* Khi điện thoại vẫn đang cầm dọc (iOS Safari chặn orientation.lock) -> tự xoay ngang toàn màn hình */
+@media (max-width: 960px) and (orientation: portrait) {
+  .stage.pseudo-fullscreen {
+    inset: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 100dvh !important;
+    height: 100vw !important;
+    transform: translate(-50%, -50%) rotate(90deg) !important;
+    transform-origin: center center !important;
+  }
 }
 
 /* ─────────────── Comprehensive Mobile & Tablet Responsiveness ─────────────── */
@@ -4453,9 +4535,10 @@ input:disabled {
     padding: 0 4px;
   }
 
-  /* Điện thoại chỉnh âm lượng bằng phím cứng -> bỏ thanh trượt, nhãn HD cho đỡ chật */
+  /* Điện thoại chỉnh âm lượng bằng phím cứng & đã có nút Play/Tua ở giữa màn hình -> thanh dưới cực gọn */
   .cp-vol-slider,
-  .cp-hd-badge {
+  .cp-hd-badge,
+  .cp-desktop-only {
     display: none;
   }
 

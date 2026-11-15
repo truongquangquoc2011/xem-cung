@@ -114,20 +114,52 @@ export function RoomPage() {
   useEffect(() => {
     const onFsChange = () => {
       const nativeFs = Boolean(document.fullscreenElement);
-      setIsFullscreen(nativeFs || pseudoFullscreen);
+      const active = nativeFs || pseudoFullscreen;
+      setIsFullscreen(active);
+      if (!active) {
+        try {
+          (screen.orientation as unknown as { unlock?: () => void })?.unlock?.();
+        } catch {
+          /* ignore */
+        }
+      }
     };
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, [pseudoFullscreen]);
 
+  const lockMobileLandscape = () => {
+    const isMobile =
+      typeof window !== 'undefined' &&
+      (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 900);
+    if (!isMobile) return;
+    try {
+      void (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })
+        ?.lock?.('landscape')
+        ?.catch(() => undefined);
+    } catch {
+      /* iOS Safari không hỗ trợ orientation.lock, sẽ dùng CSS fallback */
+    }
+  };
+
+  const unlockMobileLandscape = () => {
+    try {
+      (screen.orientation as unknown as { unlock?: () => void })?.unlock?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => undefined);
+      unlockMobileLandscape();
       setPseudoFullscreen(false);
       setIsFullscreen(false);
       return;
     }
     if (pseudoFullscreen) {
+      unlockMobileLandscape();
       setPseudoFullscreen(false);
       setIsFullscreen(false);
       return;
@@ -135,22 +167,29 @@ export function RoomPage() {
     const el = stageRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }) | null;
     if (el?.requestFullscreen) {
       el.requestFullscreen()
-        .then(() => setIsFullscreen(true))
+        .then(() => {
+          setIsFullscreen(true);
+          lockMobileLandscape();
+        })
         .catch(() => {
           setPseudoFullscreen(true);
           setIsFullscreen(true);
+          lockMobileLandscape();
         });
     } else if (el?.webkitRequestFullscreen) {
       try {
         void el.webkitRequestFullscreen();
         setIsFullscreen(true);
+        lockMobileLandscape();
       } catch {
         setPseudoFullscreen(true);
         setIsFullscreen(true);
+        lockMobileLandscape();
       }
     } else {
       setPseudoFullscreen(true);
       setIsFullscreen(true);
+      lockMobileLandscape();
     }
   };
 

@@ -441,10 +441,64 @@ export function HtmlVideoPlayer({
         )}
       </div>
 
-      {/* Center Loading Spinner */}
-      {buffering && (
+      {/* Center Loading Spinner hoặc Nút Play/Tua giữa màn hình giống YouTube/Netflix */}
+      {buffering ? (
         <div className="cp-center" aria-label="Đang tải video">
           <div className="cp-spinner" />
+        </div>
+      ) : (
+        <div className="cp-center" onClick={(e) => e.stopPropagation()}>
+          <div className="cp-center-controls">
+            <button
+              type="button"
+              className="cp-center-seek"
+              onClick={() => jumpBy(-10)}
+              aria-label="Tua lùi 10 giây"
+              title="Tua lùi 10 giây"
+            >
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path
+                  fill="currentColor"
+                  d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"
+                />
+              </svg>
+              <span>10</span>
+            </button>
+
+            <button
+              type="button"
+              className="cp-center-play"
+              onClick={togglePlay}
+              aria-label={playing ? 'Tạm dừng' : 'Phát'}
+              title={playing ? 'Tạm dừng' : 'Phát'}
+            >
+              {playing ? (
+                <svg viewBox="0 0 24 24" width="34" height="34">
+                  <path fill="currentColor" d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="34" height="34">
+                  <path fill="currentColor" d="M8 5v14l11-7-11-7z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="cp-center-seek"
+              onClick={() => jumpBy(10)}
+              aria-label="Tua tới 10 giây"
+              title="Tua tới 10 giây"
+            >
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path
+                  fill="currentColor"
+                  d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"
+                />
+              </svg>
+              <span>10</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -503,7 +557,7 @@ export function HtmlVideoPlayer({
           <div className="cp-left">
             <button
               type="button"
-              className="cp-btn"
+              className="cp-btn cp-desktop-only"
               onClick={togglePlay}
               aria-label={playing ? 'Tạm dừng' : 'Phát'}
               title={playing ? 'Tạm dừng' : 'Phát'}
@@ -521,7 +575,7 @@ export function HtmlVideoPlayer({
 
             <button
               type="button"
-              className="cp-btn cp-seek-btn"
+              className="cp-btn cp-seek-btn cp-desktop-only"
               onClick={() => jumpBy(-10)}
               aria-label="Tua lùi 10 giây"
               title="Tua lùi 10 giây"
@@ -537,7 +591,7 @@ export function HtmlVideoPlayer({
 
             <button
               type="button"
-              className="cp-btn cp-seek-btn"
+              className="cp-btn cp-seek-btn cp-desktop-only"
               onClick={() => jumpBy(10)}
               aria-label="Tua tới 10 giây"
               title="Tua tới 10 giây"

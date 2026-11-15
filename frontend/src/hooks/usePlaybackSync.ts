@@ -64,7 +64,7 @@ export function usePlaybackSync({ state, serverNow, control }: Options) {
       // nếu vừa mới seek gần đây thì KHÔNG seek lại liên tục làm huỷ (ERR_ABORTED) request tải segment HLS.
       const isCurrentlyPlaying = h.isPlaying();
       const shouldSkipSeekBecauseBuffering = !isCurrentlyPlaying && lastSeekAt.current > 0 && now - lastSeekAt.current < 30000;
-      const recentlyActedLocally = now - localActionAt.current < 3500 && Math.abs(h.getTime() - target) < 6;
+      const recentlyActedLocally = now - localActionAt.current < 5000 && Math.abs(h.getTime() - target) < 8;
 
       if (!shouldSkipSeekBecauseBuffering && !recentlyActedLocally && !h.isSeeking?.() && Math.abs(h.getTime() - target) > threshold) {
         h.seek(target);
@@ -85,11 +85,10 @@ export function usePlaybackSync({ state, serverNow, control }: Options) {
     [expected],
   );
 
-  // Trạng thái phòng thay đổi -> áp dụng ngay
+  // Trạng thái phòng thay đổi -> áp dụng ngay (giữ ngưỡng 2.5s để không tua giật lùi khi mạng lag/keyframe lệch nhẹ)
   useEffect(() => {
     if (!state?.playing) updateNeedsGesture(false);
-    lastSeekAt.current = 0;
-    apply(0.75);
+    apply(2.5);
   }, [state, apply, updateNeedsGesture]);
 
   // Kiểm tra định kỳ
