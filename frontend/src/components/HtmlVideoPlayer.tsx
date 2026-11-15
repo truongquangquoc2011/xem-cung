@@ -402,8 +402,13 @@ export function HtmlVideoPlayer({
         preload="auto"
         onClick={() => {
           const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
-          if (isTouch && !controlsVisible && playing) {
-            revealControls();
+          if (isTouch) {
+            if (controlsVisible) {
+              if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+              setControlsVisible(false);
+            } else {
+              revealControls();
+            }
             return;
           }
           togglePlay();

@@ -97,6 +97,8 @@ export function RoomPage() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [floats, setFloats] = useState<FloatingEmoji[]>([]);
+  const [marqueeChats, setMarqueeChats] = useState<Array<{ id: string; user: string; text: string; lane: number }>>([]);
+  const danmakuLaneRef = useRef(0);
   const [showNotice, setShowNotice] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [rememberedMovie, setRememberedMovie] = useState<MovieDetail | null>(navState.initialMovieDetail ?? null);
@@ -344,15 +346,25 @@ export function RoomPage() {
     return () => window.clearInterval(timer);
   }, [roomId]);
 
-  // Tin nhắn chỉ có emoji -> thả emoji bay trên màn hình
+  // Tin nhắn mới -> emoji bay lên hoặc chữ chạy ngang từ phải qua trái trên màn hình phim
   useEffect(() => {
     const last = room.chat[room.chat.length - 1];
     if (!last || last.id === lastChatId.current) return;
     lastChatId.current = last.id;
-    if (last.type !== 'USER' || !isEmojiOnly(last.text) || serverNow() - last.timestamp > 3000) return;
-    const f = { id: last.id, emoji: last.text, left: 10 + Math.random() * 80 };
-    setFloats((list) => [...list, f]);
-    setTimeout(() => setFloats((list) => list.filter((x) => x.id !== f.id)), 2600);
+    if (last.type !== 'USER' || serverNow() - last.timestamp > 5000) return;
+
+    if (isEmojiOnly(last.text)) {
+      const f = { id: last.id, emoji: last.text, left: 10 + Math.random() * 80 };
+      setFloats((list) => [...list, f]);
+      setTimeout(() => setFloats((list) => list.filter((x) => x.id !== f.id)), 2600);
+      return;
+    }
+
+    const lane = danmakuLaneRef.current % 3;
+    danmakuLaneRef.current += 1;
+    const item = { id: last.id, user: last.user ?? 'Thành viên', text: last.text, lane };
+    setMarqueeChats((list) => [...list.slice(-8), item]);
+    setTimeout(() => setMarqueeChats((list) => list.filter((x) => x.id !== item.id)), 7600);
   }, [room.chat, serverNow]);
 
   const copyLink = async () => {
@@ -592,6 +604,14 @@ export function RoomPage() {
                   {activeSkip.type === 'op' ? '⏭ Bỏ qua giới thiệu' : '⏭ Bỏ qua kết thúc'}
                 </button>
               )}
+
+              <div className="danmaku-layer" aria-hidden="true">
+                {marqueeChats.map((m) => (
+                  <div key={m.id} className="danmaku-item" style={{ top: `${11 + m.lane * 8}%` }}>
+                    <strong>{m.user}:</strong> {m.text}
+                  </div>
+                ))}
+              </div>
 
               <div className="floats" aria-hidden="true">
                 {floats.map((f) => (
