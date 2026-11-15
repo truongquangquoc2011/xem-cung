@@ -10,6 +10,7 @@ use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use serde::Deserialize;
 use tokio::net::TcpListener;
 use url::Url;
 use wreq::Client;
