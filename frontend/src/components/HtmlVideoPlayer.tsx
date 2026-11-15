@@ -186,9 +186,9 @@ export function HtmlVideoPlayer({
       hls = new Hls({
         enableWorker: true,
         startFragPrefetch: true,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferLength: 20,
+        maxMaxBufferLength: 35,
+        maxBufferSize: 25 * 1000 * 1000,
         backBufferLength: 30,
         fragLoadingTimeOut: 25000,
         fragLoadingMaxRetry: 6,

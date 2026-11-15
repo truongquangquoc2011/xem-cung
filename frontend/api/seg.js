@@ -71,7 +71,8 @@ export default async function handler(req, res) {
 
     const buf = Buffer.from(await upstream.arrayBuffer());
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'video/mp2t');
-    res.setHeader('Cache-Control', 'public, max-age=21600, s-maxage=21600');
+    res.setHeader('Cache-Control', 'public, max-age=21600, s-maxage=86400, stale-while-revalidate=3600');
+    res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=3600');
     return res.status(200).send(buf);
   } catch (err) {
     return res.status(502).json({ message: err instanceof Error ? err.message : 'Lỗi tải segment' });
