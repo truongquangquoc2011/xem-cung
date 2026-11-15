@@ -10,12 +10,10 @@ use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use reqwest::Client;
-use serde::Deserialize;
 use tokio::net::TcpListener;
 use url::Url;
-
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+use wreq::Client;
+use wreq_util::Emulation;
 
 struct ProxyPort(Arc<AtomicU16>);
 
@@ -106,9 +104,8 @@ async fn seg_handler(
     let req_builder = state
         .client
         .get(parsed.as_str())
-        .header(header::USER_AGENT, UA)
-        .header(header::ORIGIN, format!("https://{origin_host}"))
-        .header(header::REFERER, format!("https://{origin_host}/"));
+        .header("Origin", format!("https://{origin_host}"))
+        .header("Referer", format!("https://{origin_host}/"));
 
     let upstream = match req_builder.send().await {
         Ok(res) => res,
@@ -129,7 +126,7 @@ async fn seg_handler(
 
     let content_type = upstream
         .headers()
-        .get(header::CONTENT_TYPE)
+        .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("video/mp2t")
         .to_string();
@@ -169,9 +166,10 @@ fn spawn_local_proxy() -> Arc<AtomicU16> {
 
         rt.block_on(async move {
             let client = Client::builder()
+                .emulation(Emulation::Chrome131)
                 .pool_max_idle_per_host(8)
                 .build()
-                .expect("reqwest client");
+                .expect("wreq client");
 
             let app = Router::new()
                 .route("/seg", get(seg_handler).head(seg_handler).options(seg_handler))

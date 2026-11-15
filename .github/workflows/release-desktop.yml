@@ -29,6 +29,9 @@ jobs:
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup NASM (for BoringSSL Chrome TLS)
+        uses: ilammy/setup-nasm@v1
+
       - name: Build frontend for Desktop
         working-directory: frontend
         env:
