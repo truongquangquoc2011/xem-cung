@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, resolveApiUrl } from '../api';
 import { nextEpisode } from '../episodes';
 import { Chat } from '../components/Chat';
 import { Logo } from '../components/Logo';
@@ -294,6 +294,16 @@ export function RoomPage() {
     const t = setTimeout(() => setShowNotice(false), 4000);
     return () => clearTimeout(t);
   }, [room.notice]);
+
+  // Giữ Render Free không bị ngủ giữa chừng khi cả phòng đang xem phim dài (chỉ ping khi đang ở trong phòng)
+  useEffect(() => {
+    if (!roomId) return;
+    const ping = () => {
+      void fetch(resolveApiUrl('/api/time'), { cache: 'no-store' }).catch(() => undefined);
+    };
+    const timer = window.setInterval(ping, 4 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [roomId]);
 
   // Tin nhắn chỉ có emoji -> thả emoji bay trên màn hình
   useEffect(() => {
