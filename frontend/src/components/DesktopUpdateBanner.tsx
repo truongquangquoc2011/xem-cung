@@ -25,6 +25,8 @@ function compareSemver(a: string, b: string): number {
 export function DesktopUpdateBanner() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateErr, setUpdateErr] = useState('');
 
   useEffect(() => {
     const w = window as unknown as {
@@ -83,6 +85,27 @@ export function DesktopUpdateBanner() {
 
   if (!update || dismissed) return null;
 
+  const handleInstall = async () => {
+    const w = window as unknown as {
+      __TAURI__?: { core?: { invoke?: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> } };
+      __TAURI_INTERNALS__?: { invoke?: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> };
+    };
+    const invoke = w.__TAURI__?.core?.invoke ?? w.__TAURI_INTERNALS__?.invoke;
+    if (!invoke || !/setup\.exe$/i.test(update.url)) {
+      window.open(update.url, '_blank', 'noreferrer');
+      return;
+    }
+    setUpdating(true);
+    setUpdateErr('');
+    try {
+      await invoke('install_update', { url: update.url });
+    } catch {
+      setUpdating(false);
+      setUpdateErr('Không tự cài được — bấm lại để mở trang tải.');
+      window.open(DOWNLOAD_PAGE, '_blank', 'noreferrer');
+    }
+  };
+
   return (
     <div
       style={{
@@ -105,22 +128,24 @@ export function DesktopUpdateBanner() {
         zIndex: 9999,
       }}
     >
-      <span>🚀 Có bản mới <strong>v{update.version}</strong></span>
-      <a
-        href={update.url}
-        target="_blank"
-        rel="noreferrer"
+      <span>🚀 Có bản mới <strong>v{update.version}</strong>{updateErr ? ` · ${updateErr}` : ''}</span>
+      <button
+        type="button"
+        disabled={updating}
+        onClick={() => void handleInstall()}
         style={{
           background: '#e50914',
+          border: 'none',
           color: '#fff',
           padding: '5px 12px',
           borderRadius: '8px',
           fontWeight: 700,
-          textDecoration: 'none',
+          cursor: updating ? 'wait' : 'pointer',
+          opacity: updating ? 0.75 : 1,
         }}
       >
-        Tải bản mới
-      </a>
+        {updating ? 'Đang tải & cài…' : 'Cập nhật ngay'}
+      </button>
       <button
         type="button"
         onClick={() => setDismissed(true)}

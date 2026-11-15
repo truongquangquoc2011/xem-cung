@@ -153,6 +153,34 @@ fn get_app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[tauri::command]
+async fn install_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !url.starts_with("https://github.com/truongquangquoc2011/xem-cung/releases/download/") {
+        return Err("URL cập nhật không hợp lệ".to_string());
+    }
+
+    let client = Client::builder()
+        .emulation(Emulation::Chrome131)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("Tải bản cập nhật thất bại (HTTP {})", res.status()));
+    }
+
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    let temp_path = std::env::temp_dir().join("xem-cung-update-setup.exe");
+    std::fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
+
+    std::process::Command::new(&temp_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    app.exit(0);
+    Ok(())
+}
+
 fn spawn_local_proxy() -> Arc<AtomicU16> {
     let port_holder = Arc::new(AtomicU16::new(0));
     let port_clone = Arc::clone(&port_holder);
@@ -197,7 +225,11 @@ fn main() {
 
     tauri::Builder::default()
         .manage(ProxyPort(port))
-        .invoke_handler(tauri::generate_handler![get_proxy_port, get_app_version])
+        .invoke_handler(tauri::generate_handler![
+            get_proxy_port,
+            get_app_version,
+            install_update
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Xem Cung desktop");
 }
