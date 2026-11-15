@@ -108,7 +108,9 @@ export function VoicePanel({ me, members, connected, voice }: Props) {
                               ? 'Đã kết nối'
                               : peerState === 'connected'
                                 ? 'Đã kết nối RTC'
-                                : 'Đang đồng bộ…'}
+                                : peerState === 'failed'
+                                  ? '⚠️ Lỗi kết nối RTC'
+                                  : 'Đang đồng bộ…'}
                     </span>
                   </div>
                   <div className="voice-member-icons">
