@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|download\\.html|desktop-version\\.json).*)",
       "destination": "/index.html"
     }
   ]

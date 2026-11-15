@@ -1,0 +1,56 @@
+name: Build & Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (vd: v1.0.1)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build frontend for Desktop
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://xem-cung-c7q0.onrender.com
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Tauri Windows app
+        working-directory: desktop
+        run: npm run build:win
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Xem Cùng Desktop ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/xem-cung-desktop.exe

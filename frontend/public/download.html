@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tải Xem Cùng Desktop (Windows)</title>
+    <style>
+      :root {
+        --bg: #0b0b12;
+        --card: #151522;
+        --border: rgba(255, 255, 255, 0.1);
+        --accent: #e50914;
+        --accent-hover: #f6121d;
+        --text: #f3f4f6;
+        --muted: #9ca3af;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at top, #201222 0%, var(--bg) 60%);
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        width: 100%;
+        max-width: 560px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 32px 28px;
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #fca5a5;
+        background: rgba(229, 9, 20, 0.15);
+        border: 1px solid rgba(229, 9, 20, 0.35);
+        padding: 4px 10px;
+        border-radius: 999px;
+      }
+      h1 {
+        margin: 14px 0 8px;
+        font-size: 28px;
+        line-height: 1.2;
+      }
+      .sub {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .perks {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 24px;
+        display: grid;
+        gap: 10px;
+        font-size: 14px;
+      }
+      .perks li {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 13px 18px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 15px;
+        text-decoration: none;
+        transition: 0.15s ease;
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+      }
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+        border: 1px solid var(--border);
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .meta {
+        margin-top: 16px;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .meta a { color: #fca5a5; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <span class="badge" id="ver-badge">Windows 10 / 11 (64-bit) · Rust + WebView2</span>
+      <h1>Xem Cùng Desktop</h1>
+      <p class="sub">
+        Phiên bản cài đặt siêu nhẹ cho Windows — tự tải video trực tiếp tại máy, không giới hạn băng thông và đồng bộ phòng xem chung y hệt bản Web.
+      </p>
+
+      <ul class="perks">
+        <li>⚡ <strong>Siêu gọn nhẹ:</strong> Bộ cài ~2 MB, lõi Rust streaming trực tiếp.</li>
+        <li>🎬 <strong>Không giới hạn băng thông:</strong> Không tốn quota 10 GB proxy Web.</li>
+        <li>🔔 <strong>Tự báo cập nhật:</strong> Hiện thông báo ngay trong app khi có phiên bản mới.</li>
+      </ul>
+
+      <div class="actions">
+        <a class="btn btn-primary" id="btn-setup" href="https://github.com/truongquangquoc2011/xem-cung/releases/latest" target="_blank" rel="noreferrer">
+          ⬇️ Tải Bộ Cài Đặt Windows (.exe)
+        </a>
+        <a class="btn btn-secondary" id="btn-portable" href="https://github.com/truongquangquoc2011/xem-cung/releases" target="_blank" rel="noreferrer" style="display: none;">
+          📦 Tải Bản Portable (chạy thẳng không cần cài)
+        </a>
+        <a class="btn btn-secondary" href="/">
+          🌐 Mở bản Web trên trình duyệt
+        </a>
+      </div>
+
+      <p class="meta" id="meta-info">
+        Đang kiểm tra phiên bản mới nhất từ GitHub Releases…
+      </p>
+    </main>
+
+    <script>
+      (async function () {
+        const badge = document.getElementById('ver-badge');
+        const btnSetup = document.getElementById('btn-setup');
+        const btnPortable = document.getElementById('btn-portable');
+        const meta = document.getElementById('meta-info');
+        try {
+          const res = await fetch('https://api.github.com/repos/truongquangquoc2011/xem-cung/releases/latest');
+          if (!res.ok) throw new Error('No release yet');
+          const data = await res.json();
+          const ver = data.tag_name || 'v1.0.0';
+          badge.textContent = 'Phiên bản ' + ver + ' · Windows 64-bit';
+
+          const assets = Array.isArray(data.assets) ? data.assets : [];
+          const setup = assets.find((a) => /setup\.exe$/i.test(a.name));
+          const portable = assets.find((a) => /desktop\.exe$/i.test(a.name));
+
+          if (setup) {
+            btnSetup.href = setup.browser_download_url;
+            const mb = (setup.size / (1024 * 1024)).toFixed(2);
+            btnSetup.textContent = '⬇️ Tải Bộ Cài Đặt ' + ver + ' (' + mb + ' MB)';
+          }
+          if (portable) {
+            btnPortable.href = portable.browser_download_url;
+            const mb = (portable.size / (1024 * 1024)).toFixed(2);
+            btnPortable.textContent = '📦 Tải Bản Portable ' + ver + ' (' + mb + ' MB)';
+            btnPortable.style.display = 'flex';
+          }
+          meta.innerHTML = 'Phát hành trên <a href="' + data.html_url + '" target="_blank" rel="noreferrer">GitHub Releases</a>';
+        } catch {
+          meta.innerHTML = 'Chưa có bản Release công khai trên GitHub — bạn có thể xem <a href="https://github.com/truongquangquoc2011/xem-cung/releases" target="_blank" rel="noreferrer">trang Releases</a> hoặc dùng bản Web ở trên.';
+        }
+      })();
+    </script>
+  </body>
+</html>

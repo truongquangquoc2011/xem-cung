@@ -4,6 +4,31 @@ import { resolveApiUrl, resolveHlsUrl } from '../api';
 import type { PlayerHandle } from '../types';
 import type { PlayerCallbacks } from './VideoPlayer';
 
+let cachedLocalProxyBase: string | null = null;
+let localProxyPromise: Promise<string | null> | null = null;
+
+function getLocalProxyBase(): Promise<string | null> {
+  if (cachedLocalProxyBase !== null) return Promise.resolve(cachedLocalProxyBase);
+  if (localProxyPromise) return localProxyPromise;
+
+  const w = window as unknown as {
+    __TAURI__?: { core?: { invoke?: (cmd: string) => Promise<number> } };
+    __TAURI_INTERNALS__?: { invoke?: (cmd: string) => Promise<number> };
+  };
+  const invoke = w.__TAURI__?.core?.invoke ?? w.__TAURI_INTERNALS__?.invoke;
+  if (!invoke) return Promise.resolve(null);
+
+  localProxyPromise = invoke('get_proxy_port')
+    .then((port) => {
+      cachedLocalProxyBase = port ? `http://127.0.0.1:${port}` : null;
+      return cachedLocalProxyBase;
+    })
+    .catch(() => null);
+  return localProxyPromise;
+}
+
+void getLocalProxyBase();
+
 interface Props extends PlayerCallbacks {
   url: string;
   movieTitle?: string;
@@ -192,6 +217,12 @@ export function HtmlVideoPlayer({
         backBufferLength: 30,
         fragLoadingTimeOut: 25000,
         fragLoadingMaxRetry: 6,
+        xhrSetup: (xhr, reqUrl) => {
+          if (cachedLocalProxyBase && reqUrl.includes('/api/seg?')) {
+            const qIdx = reqUrl.indexOf('/api/seg?');
+            xhr.open('GET', `${cachedLocalProxyBase}${reqUrl.slice(qIdx + 4)}`, true);
+          }
+        },
       });
       let networkRetries = 0;
       hls.on(Hls.Events.FRAG_LOADED, () => {
