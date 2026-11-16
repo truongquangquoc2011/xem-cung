@@ -103,15 +103,17 @@ public class MovieController {
 
         // Khi bấm tag Phim AI (không có từ khoá): gộp Nguồn C (phim-ai) + Phim AI trên YouTube
         if ("phim-ai".equals(cleanCat) && cleanQ.isEmpty()) {
-            MoviePage base = page == 1
-                    ? provider.search("", "phim-ai", period, 1)
-                    : new MoviePage(List.of(), page, 1);
             if (page == 1) {
-                List<MovieSummary> combined = new ArrayList<>(base.items());
+                List<MovieSummary> combined = new ArrayList<>();
+                try {
+                    combined.addAll(provider.search("", "phim-ai", period, 1).items());
+                } catch (Exception e) {
+                    log.debug("Nguồn C phim-ai lỗi, dùng fallback YouTube AI: {}", e.getMessage());
+                }
                 combined.addAll(youTubeAiMovieService.listDefaultAiMovies());
                 return new MoviePage(combined, 1, 1);
             }
-            return base;
+            return new MoviePage(List.of(), page, 1);
         }
 
         // Tìm kiếm thông minh: không dấu, bỏ từ nhiễu, gần đúng, xếp hạng + cache ngắn hạn
@@ -133,8 +135,12 @@ public class MovieController {
     public MoviePage searchAi(@RequestParam(defaultValue = "") String q) {
         String cleanQ = q == null ? "" : q.strip();
         if (cleanQ.isEmpty()) {
-            MoviePage base = provider.search("", "phim-ai", "", 1);
-            List<MovieSummary> combined = new ArrayList<>(base.items());
+            List<MovieSummary> combined = new ArrayList<>();
+            try {
+                combined.addAll(provider.search("", "phim-ai", "", 1).items());
+            } catch (Exception e) {
+                log.debug("Nguồn C phim-ai lỗi, dùng fallback YouTube AI: {}", e.getMessage());
+            }
             combined.addAll(youTubeAiMovieService.listDefaultAiMovies());
             return new MoviePage(combined, 1, 1);
         }

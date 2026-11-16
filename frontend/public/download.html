@@ -1321,11 +1321,12 @@
           <div class="smartscreen">
             <strong>Lưu ý khi mở lần đầu:</strong><br />
             • <strong>Windows:</strong> Nếu hiện bảng xanh SmartScreen, bấm <em>More info (Thông tin thêm)</em> → <em>Run anyway (Vẫn chạy)</em>.<br />
-            • <strong>macOS (báo "bị hỏng và không thể mở được"):</strong> Do app chưa mua chứng chỉ Apple Developer (\$99/năm), Safari sẽ gắn cờ cách ly. Bạn chỉ cần kéo <em>Xem Cung.app</em> vào <strong>Applications</strong>, mở <strong>Terminal</strong> và chạy đúng 1 dòng này rồi mở lại app:<br />
-            <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            • <strong>macOS — Cách 1 (App Desktop .dmg):</strong> Kéo <em>Xem Cung.app</em> vào <strong>Applications</strong>. Do app chưa mua chứng chỉ Apple Developer (\$99/năm), nếu Safari báo <em>"bị hỏng và không thể mở được"</em>, bạn mở <strong>Terminal</strong> (<code>Cmd + Space</code> → Terminal) và chạy đúng 1 dòng này rồi mở lại:<br />
+            <div style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <code id="mac-cmd" style="background:#05070e;border:1px solid rgba(255,255,255,0.14);padding:6px 10px;border-radius:8px;color:#7dd3fc;user-select:all">xattr -cr "/Applications/Xem Cung.app"</code>
               <button type="button" id="copy-mac-cmd" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Copy lệnh</button>
             </div>
+            • <strong>macOS — Cách 2 (Không cần gõ lệnh, 0 cảnh báo):</strong> Mở <a href="/" style="color:#7dd3fc">bản Web trên Safari</a> → menu <strong>File → Add to Dock…</strong> để ghim thành app riêng trên thanh Dock chỉ với 1 click.
           </div>
         </div>
       </section>

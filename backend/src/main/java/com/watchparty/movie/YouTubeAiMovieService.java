@@ -91,6 +91,9 @@ public class YouTubeAiMovieService {
         }
 
         List<MovieSummary> results = fetchYouTubeSearch(query.strip(), limit);
+        if (results.isEmpty()) {
+            results = fetchBingYouTubeSearch(query.strip(), limit);
+        }
         if (!results.isEmpty()) {
             searchCache.put(key, new CachedList(results, now + CACHE_TTL_MS));
         }
@@ -146,7 +149,11 @@ public class YouTubeAiMovieService {
         try {
             String url = "https://www.youtube.com/results?search_query="
                     + URLEncoder.encode(query, StandardCharsets.UTF_8);
-            String html = http.get().uri(URI.create(url)).retrieve().body(String.class);
+            String html = http.get()
+                    .uri(URI.create(url))
+                    .header("Cookie", "SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+                    .retrieve()
+                    .body(String.class);
             if (html == null || html.isEmpty()) return List.of();
 
             String marker = "var ytInitialData = ";
@@ -204,6 +211,53 @@ public class YouTubeAiMovieService {
             log.warn("Lỗi tìm kiếm YouTube cho '{}': {}", query, e.getMessage());
             return List.of();
         }
+    }
+
+    /** Fallback tìm video YouTube qua Bing Videos khi YouTube chặn IP datacenter. */
+    private List<MovieSummary> fetchBingYouTubeSearch(String query, int limit) {
+        try {
+            String url = "https://www.bing.com/videos/search?q="
+                    + URLEncoder.encode("site:youtube.com " + query, StandardCharsets.UTF_8);
+            String html = http.get()
+                    .uri(URI.create(url))
+                    .header("Referer", "https://www.bing.com/")
+                    .retrieve()
+                    .body(String.class);
+            if (html == null || html.isEmpty()) return List.of();
+
+            Pattern cardPattern = Pattern.compile(
+                    "youtube\\.com(?:%2F|/)watch(?:%3F|\\?)v(?:%3D|=)([A-Za-z0-9_-]{11})[^>]*?aria-label=\"([^\"]+)\"",
+                    Pattern.DOTALL);
+            var matcher = cardPattern.matcher(html);
+            Map<String, MovieSummary> seen = new LinkedHashMap<>();
+            while (matcher.find() && seen.size() < limit) {
+                String videoId = matcher.group(1);
+                if (seen.containsKey("yt-" + videoId)) continue;
+                String rawLabel = decodeHtmlEntities(matcher.group(2));
+                String title = rawLabel
+                        .replaceAll("\\s+(?:từ|from|on)\\s+YouTube.*$", "")
+                        .replaceAll("\\s*·\\s*Thời lượng:.*$", "")
+                        .strip();
+                if (title.isEmpty()) title = "Video YouTube (" + videoId + ")";
+                String poster = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+                String id = "yt-" + videoId;
+                MovieSummary summary = new MovieSummary(id, title, "YouTube", poster, "Full", "YouTube", poster);
+                summaryCache.put(id, summary);
+                seen.put(id, summary);
+            }
+            return new ArrayList<>(seen.values());
+        } catch (Exception e) {
+            log.warn("Lỗi fallback Bing YouTube cho '{}': {}", query, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static String decodeHtmlEntities(String s) {
+        return s.replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">");
     }
 
     private static String readRuns(JsonNode runs) {

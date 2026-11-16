@@ -328,6 +328,16 @@ export function HomePage() {
           <button className="btn btn-outline" disabled={!!busy || !code.trim()}>
             Vào phòng
           </button>
+          {!(
+            window.location.hostname === 'tauri.localhost' ||
+            window.location.protocol === 'tauri:' ||
+            '__TAURI_INTERNALS__' in window ||
+            '__TAURI__' in window
+          ) && (
+            <a className="btn btn-primary" href="/download.html" title="Tải Xem Cùng Desktop (Windows / macOS)">
+              Tải App
+            </a>
+          )}
         </form>
       </nav>
 
