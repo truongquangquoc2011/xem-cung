@@ -202,6 +202,8 @@ export function usePlaybackSync({ state, serverNow, control }: Options) {
       }
       if (isEcho()) return;
       if (s.playing) {
+        // Nếu người dùng vừa chủ động tua/thao tác tại máy này (< 3s), không kéo ngược về vị trí cũ trước khi server echo về
+        if (Date.now() - localActionAt.current < 3000) return;
         // Phòng đã đang phát: nếu máy này bị trễ nhiều sau khi buffer xong thì tự nhảy theo phòng, KHÔNG phát lệnh play kéo cả phòng lùi lại
         const target = expected(s);
         if (Math.abs(t - target) > DRIFT_THRESHOLD && h) {

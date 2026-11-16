@@ -226,7 +226,7 @@ public class YouTubeAiMovieService {
             if (html == null || html.isEmpty()) return List.of();
 
             Pattern cardPattern = Pattern.compile(
-                    "youtube\\.com(?:%2F|/)watch(?:%3F|\\?)v(?:%3D|=)([A-Za-z0-9_-]{11})[^>]*?aria-label=\"([^\"]+)\"",
+                    "youtube\\.com(?:%2F|/)watch(?:%3F|\\?)v(?:%3D|=)([A-Za-z0-9_-]{11}).{0,500}?aria-label=\"([^\"]+)\"",
                     Pattern.DOTALL);
             var matcher = cardPattern.matcher(html);
             Map<String, MovieSummary> seen = new LinkedHashMap<>();
