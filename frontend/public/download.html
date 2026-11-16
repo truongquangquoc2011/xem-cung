@@ -1321,7 +1321,11 @@
           <div class="smartscreen">
             <strong>Lưu ý khi mở lần đầu:</strong><br />
             • <strong>Windows:</strong> Nếu hiện bảng xanh SmartScreen, bấm <em>More info (Thông tin thêm)</em> → <em>Run anyway (Vẫn chạy)</em>.<br />
-            • <strong>macOS:</strong> Kéo <em>Xem Cung.app</em> vào Applications; lần đầu mở giữ <em>Ctrl + Click</em> → <em>Open</em> (hoặc chạy <code>xattr -cr "/Applications/Xem Cung.app"</code> nếu báo chưa xác minh nhà phát triển).
+            • <strong>macOS (báo "bị hỏng và không thể mở được"):</strong> Do app chưa mua chứng chỉ Apple Developer (\$99/năm), Safari sẽ gắn cờ cách ly. Bạn chỉ cần kéo <em>Xem Cung.app</em> vào <strong>Applications</strong>, mở <strong>Terminal</strong> và chạy đúng 1 dòng này rồi mở lại app:<br />
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <code id="mac-cmd" style="background:#05070e;border:1px solid rgba(255,255,255,0.14);padding:6px 10px;border-radius:8px;color:#7dd3fc;user-select:all">xattr -cr "/Applications/Xem Cung.app"</code>
+              <button type="button" id="copy-mac-cmd" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">Copy lệnh</button>
+            </div>
           </div>
         </div>
       </section>
@@ -1379,6 +1383,17 @@
           panels.forEach((p) => p.classList.toggle('active', p.dataset.panel === target));
         });
       });
+
+      const copyMacBtn = document.getElementById('copy-mac-cmd');
+      if (copyMacBtn) {
+        copyMacBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText('xattr -cr "/Applications/Xem Cung.app"');
+            copyMacBtn.textContent = 'Đã chép ✓';
+            setTimeout(() => (copyMacBtn.textContent = 'Copy lệnh'), 1800);
+          } catch {}
+        });
+      }
 
       // Fetch latest GitHub Release info
       (async function () {
