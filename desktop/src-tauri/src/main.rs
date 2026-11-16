@@ -162,6 +162,7 @@ async fn install_update(url: String, app: tauri::AppHandle) -> Result<(), String
 
     let client = Client::builder()
         .emulation(Emulation::Chrome131)
+        .redirect(wreq::redirect::Policy::limited(10))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -196,6 +197,7 @@ fn spawn_local_proxy() -> Arc<AtomicU16> {
         rt.block_on(async move {
             let client = Client::builder()
                 .emulation(Emulation::Chrome131)
+                .redirect(wreq::redirect::Policy::limited(10))
                 .pool_max_idle_per_host(8)
                 .build()
                 .expect("wreq client");
