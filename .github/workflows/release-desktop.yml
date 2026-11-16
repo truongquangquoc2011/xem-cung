@@ -57,3 +57,44 @@ jobs:
           files: |
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/release/xem-cung-desktop.exe
+
+  release-macos:
+    needs: release-windows
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install NASM (for BoringSSL Chrome TLS)
+        run: brew install nasm
+
+      - name: Build frontend for Desktop
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://xem-cung-c7q0.onrender.com
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Tauri macOS app (.dmg)
+        working-directory: desktop
+        run: npm run build:mac
+
+      - name: Upload macOS DMG to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg

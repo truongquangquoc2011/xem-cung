@@ -24,8 +24,20 @@ export function MovieLibrary({
   playingUrl,
   onRememberDetail,
 }: Props) {
-  const [query, setQuery] = useState('');
-  const [submitted, setSubmitted] = useState('');
+  const [query, setQuery] = useState(() => {
+    try {
+      return sessionStorage.getItem('xemcung.library.query') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [submitted, setSubmitted] = useState(() => {
+    try {
+      return (sessionStorage.getItem('xemcung.library.query') ?? '').trim();
+    } catch {
+      return '';
+    }
+  });
   const [category, setCategory] = useState('');
   const [period, setPeriod] = useState<HotPeriod | ''>('');
   const [page, setPage] = useState(1);
@@ -33,6 +45,15 @@ export function MovieLibrary({
   const [detail, setDetail] = useState<MovieDetail | null>(initialDetail);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Lưu từ khoá tìm kiếm kho phim vào sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('xemcung.library.query', query);
+    } catch {
+      /* ignore */
+    }
+  }, [query]);
 
   // Gõ tới đâu tìm tới đó (debounce), không cần bấm "Tìm"
   useEffect(() => {

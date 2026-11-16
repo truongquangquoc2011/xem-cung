@@ -31,12 +31,14 @@ function describeChange(prev: PlaybackState | null, next: PlaybackState, by?: st
  * Kết nối STOMP tới phòng: nhận trạng thái phát, chat, danh sách thành viên.
  * name = null thì chưa kết nối (đang chờ người dùng nhập tên).
  */
-export function useRoom(roomId: string, name: string | null, pin?: string) {
+export function useRoom(roomId: string, name: string | null, pin?: string, hostToken?: string) {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [error, setError] = useState<string | null>(null);
+  const [closedReason, setClosedReason] = useState<string | null>(null);
   const [state, setState] = useState<PlaybackState | null>(null);
   const [roomTitle, setRoomTitle] = useState<string>('');
   const [hasPin, setHasPin] = useState<boolean>(false);
+  const [isHost, setIsHost] = useState<boolean>(false);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<string | null>(null);
@@ -70,6 +72,7 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
         setMe(snap.you);
         setRoomTitle(snap.roomTitle ?? '');
         setHasPin(Boolean(snap.hasPin));
+        setIsHost(Boolean(snap.isHost));
         setState(snap.state);
         setChat(snap.chat);
         setMembers(snap.members);
@@ -94,11 +97,17 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
           if (text) setNotice({ text, at: Date.now() });
         } else if (event.type === 'VOICE' && event.voice) {
           voiceListenerRef.current?.(event.voice);
+        } else if (event.type === 'CLOSED') {
+          setClosedReason(event.by || 'Chủ phòng đã đóng phòng');
+          void client.deactivate();
         }
         // Phòng khoá PIN: server chỉ cho nghe kênh phòng khi có PIN đúng (chống nghe lén)
       }, { pin: pin ?? '' });
 
-      client.publish({ destination: `/app/room/${roomId}/join`, body: JSON.stringify({ name, pin: pin ?? '' }) });
+      client.publish({
+        destination: `/app/room/${roomId}/join`,
+        body: JSON.stringify({ name, pin: pin ?? '', hostToken: hostToken ?? '' }),
+      });
     };
 
     client.onWebSocketClose = () => setStatus('reconnecting');
@@ -110,10 +119,10 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
       clientRef.current = null;
       void client.deactivate();
     };
-  }, [roomId, name, pin]);
+  }, [roomId, name, pin, hostToken]);
 
   const send = useCallback(
-    (path: 'control' | 'chat' | 'voice/state' | 'voice/signal', body: unknown) => {
+    (path: 'control' | 'chat' | 'voice/state' | 'voice/signal' | 'close', body: unknown) => {
       const c = clientRef.current;
       if (c?.connected) c.publish({ destination: `/app/room/${roomId}/${path}`, body: JSON.stringify(body) });
     },
@@ -126,6 +135,11 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
   );
 
   const sendChat = useCallback((text: string) => send('chat', { text }), [send]);
+
+  const closeRoom = useCallback(
+    (token?: string) => send('close', { hostToken: token ?? hostToken ?? '' }),
+    [send, hostToken],
+  );
 
   const sendVoiceState = useCallback(
     (inVoice: boolean, muted: boolean, deafened: boolean) =>
@@ -149,15 +163,18 @@ export function useRoom(roomId: string, name: string | null, pin?: string) {
   return {
     status,
     error,
+    closedReason,
     clearError: () => setError(null),
     state,
     roomTitle,
     hasPin,
+    isHost,
     chat,
     members,
     me,
     notice,
     control,
+    closeRoom,
     sendChat,
     sendVoiceState,
     sendVoiceSignal,

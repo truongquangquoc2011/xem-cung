@@ -37,11 +37,27 @@ public class RoomController {
 
     @PostMapping("/rooms")
     @ResponseStatus(HttpStatus.CREATED)
-    public RoomSummary create(@RequestBody(required = false) Requests.CreateRoom req, HttpServletRequest http) {
+    public Map<String, Object> create(@RequestBody(required = false) Requests.CreateRoom req, HttpServletRequest http) {
         guard.checkRoomCreation(ClientIp.of(http));
         String title = req == null ? null : req.title();
         String pin = req == null ? null : req.pin();
-        return rooms.create(title, pin).summary();
+        Room created = rooms.create(title, pin);
+        RoomSummary s = created.summary();
+        return Map.of(
+                "id", s.id(),
+                "title", s.title(),
+                "memberCount", s.memberCount(),
+                "hasPin", s.hasPin(),
+                "pinned", s.pinned(),
+                "hostToken", created.getHostToken()
+        );
+    }
+
+    @PostMapping("/rooms/{id}/close")
+    public Map<String, Object> close(@PathVariable String id,
+                                     @RequestBody(required = false) Requests.CloseRoom req) {
+        rooms.closeRoom(id, null, req == null ? null : req.hostToken());
+        return Map.of("ok", true);
     }
 
     @GetMapping("/rooms/{id}")

@@ -914,13 +914,13 @@
       <section class="hero">
         <div class="pill-status">
           <span class="dot-live"></span>
-          <span id="hero-badge">Đã có mặt cho Windows 10 & 11 (64-bit)</span>
+          <span id="hero-badge">Đã có mặt cho Windows 10/11 &amp; macOS</span>
         </div>
 
         <h1>Rạp phim riêng, ngay trên máy bạn.</h1>
 
         <p class="lede">
-          Xem Cùng Desktop đưa cả phòng chiếu phim về Windows: stream trực tiếp bằng lõi Rust
+          Xem Cùng Desktop đưa cả phòng chiếu phim về Windows và macOS: stream trực tiếp bằng lõi Rust
           không giới hạn băng thông, đồng bộ từng giây, voice chat và chat bóng bay mượt mà.
         </p>
 
@@ -935,7 +935,20 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <path d="M3 5.5L10.5 4.4V11.5H3V5.5ZM11.5 4.2L21 2.8V11.5H11.5V4.2ZM3 12.5H10.5V19.6L3 18.5V12.5ZM11.5 12.5H21V21.2L11.5 19.8V12.5Z" />
             </svg>
-            <span id="hero-setup-label">Tải cho Windows</span>
+            <span id="hero-setup-label">Tải cho Windows (.exe)</span>
+          </a>
+
+          <a
+            class="btn btn-outline"
+            id="hero-mac"
+            href="https://github.com/truongquangquoc2011/xem-cung/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.96 6.33c.68-.83 1.14-1.98 1.01-3.13-.98.04-2.17.65-2.87 1.48-.62.72-1.17 1.89-1.02 3.01 1.1.09 2.2-.53 2.88-1.36z" />
+            </svg>
+            <span id="hero-mac-label">Tải cho macOS (.dmg)</span>
           </a>
 
           <a
@@ -945,7 +958,7 @@
             target="_blank"
             rel="noreferrer"
           >
-            <span id="hero-portable-label">Tải bản Portable</span>
+            <span id="hero-portable-label">Windows Portable</span>
           </a>
         </div>
 
@@ -1262,11 +1275,11 @@
             </svg>
           </div>
 
-          <h2 class="sec-title" style="margin: 0 auto 10px; max-width: 20ch;">
-            Tải Xem Cùng cho Windows
+          <h2 class="sec-title" style="margin: 0 auto 10px; max-width: 22ch;">
+            Tải Xem Cùng cho Windows &amp; macOS
           </h2>
           <p class="sec-lede" style="margin: 0 auto 28px;">
-            Windows 10 (1809 trở lên) hoặc Windows 11, bản 64-bit.
+            Windows 10/11 (64-bit) hoặc macOS (Apple Silicon). iPhone/iPad dùng trực tiếp trên Safari bản Web.
           </p>
 
           <div class="cta-row">
@@ -1277,7 +1290,17 @@
               target="_blank"
               rel="noreferrer"
             >
-              <span id="dl-setup-label">Tải Bộ Cài Đặt (.exe)</span>
+              <span id="dl-setup-label">Tải Windows (.exe)</span>
+            </a>
+
+            <a
+              class="btn btn-outline"
+              id="dl-mac"
+              href="https://github.com/truongquangquoc2011/xem-cung/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span id="dl-mac-label">Tải macOS (.dmg)</span>
             </a>
 
             <a
@@ -1287,7 +1310,7 @@
               target="_blank"
               rel="noreferrer"
             >
-              <span id="dl-portable-label">Tải Bản Portable (.exe)</span>
+              <span id="dl-portable-label">Windows Portable (.exe)</span>
             </a>
           </div>
 
@@ -1296,7 +1319,9 @@
           </p>
 
           <div class="smartscreen">
-            <strong>Lưu ý khi mở lần đầu (Windows SmartScreen):</strong> Vì app cá nhân chưa mua chứng chỉ ký số thương mại, Windows Defender có thể hiện bảng xanh <em>"Windows protected your PC"</em>. Bạn chỉ cần bấm <strong>More info (Thông tin thêm)</strong> → <strong>Run anyway (Vẫn chạy)</strong>. Toàn bộ mã nguồn đều công khai trên GitHub để bạn tự kiểm chứng.
+            <strong>Lưu ý khi mở lần đầu:</strong><br />
+            • <strong>Windows:</strong> Nếu hiện bảng xanh SmartScreen, bấm <em>More info (Thông tin thêm)</em> → <em>Run anyway (Vẫn chạy)</em>.<br />
+            • <strong>macOS:</strong> Kéo <em>Xem Cung.app</em> vào Applications; lần đầu mở giữ <em>Ctrl + Click</em> → <em>Open</em> (hoặc chạy <code>xattr -cr "/Applications/Xem Cung.app"</code> nếu báo chưa xác minh nhà phát triển).
           </div>
         </div>
       </section>
@@ -1321,8 +1346,12 @@
             <p>Hoàn toàn được! Bạn dùng Desktop làm host hoặc thành viên đều vào chung 1 mã phòng với người dùng Chrome, Safari, iPhone hay Android bình thường.</p>
           </details>
           <details>
+            <summary>iPhone / iPad (iOS) có tải app được không?</summary>
+            <p>Apple không cho phép cài file ứng dụng ngoài App Store trực tiếp trên iOS như Windows/macOS. Bạn chỉ cần mở thẳng <a href="/" style="color:var(--cyan)">bản Web trên Safari</a> — đã hỗ trợ xoay ngang toàn màn hình và chat bóng bay mượt mà.</p>
+          </details>
+          <details>
             <summary>Khi có phiên bản mới thì cập nhật như thế nào?</summary>
-            <p>Mỗi khi có tag release mới trên GitHub, app sẽ tự hiện thanh thông báo ngay bên trong giao diện kèm nút tải phiên bản mới nhất.</p>
+            <p>Mỗi khi có bản phát hành mới trên GitHub, app Desktop sẽ tự hiện thông báo ở góc dưới kèm nút <strong>Cập nhật ngay</strong> để tự tải và cài đè bản mới.</p>
           </details>
         </div>
       </section>
@@ -1356,46 +1385,70 @@
         const heroBadge = document.getElementById('hero-badge');
         const heroSetup = document.getElementById('hero-setup');
         const heroSetupLabel = document.getElementById('hero-setup-label');
+        const heroMac = document.getElementById('hero-mac');
+        const heroMacLabel = document.getElementById('hero-mac-label');
         const heroPortable = document.getElementById('hero-portable');
         const heroPortableLabel = document.getElementById('hero-portable-label');
         const heroMeta = document.getElementById('hero-meta');
 
         const dlSetup = document.getElementById('dl-setup');
         const dlSetupLabel = document.getElementById('dl-setup-label');
+        const dlMac = document.getElementById('dl-mac');
+        const dlMacLabel = document.getElementById('dl-mac-label');
         const dlPortable = document.getElementById('dl-portable');
         const dlPortableLabel = document.getElementById('dl-portable-label');
         const dlMeta = document.getElementById('dl-meta');
         const statSize = document.getElementById('stat-size');
         const simVerPill = document.getElementById('sim-ver-pill');
 
+        const isMac = /Mac/i.test(navigator.platform) && !/iPhone|iPad|iPod/i.test(navigator.userAgent);
+        if (isMac) {
+          heroSetup.classList.replace('btn-primary', 'btn-outline');
+          heroMac.classList.replace('btn-outline', 'btn-primary');
+          dlSetup.classList.replace('btn-primary', 'btn-outline');
+          dlMac.classList.replace('btn-outline', 'btn-primary');
+        }
+
         try {
           const res = await fetch('https://api.github.com/repos/truongquangquoc2011/xem-cung/releases/latest');
           if (!res.ok) throw new Error('No release');
           const data = await res.json();
-          const ver = data.tag_name || 'v1.0.0';
+          const ver = data.tag_name || 'v2.1.0';
           const assets = Array.isArray(data.assets) ? data.assets : [];
           const setup = assets.find((a) => /setup\.exe$/i.test(a.name));
           const portable = assets.find((a) => /desktop\.exe$/i.test(a.name));
+          const macDmg = assets.find((a) => /\.dmg$/i.test(a.name));
           const totalDownloads = assets.reduce((sum, a) => sum + (a.download_count || 0), 0);
 
-          heroBadge.textContent = 'Phiên bản ' + ver + ' · Windows 10 & 11 (64-bit)';
+          heroBadge.textContent = 'Phiên bản ' + ver + ' · Windows 10/11 & macOS';
           simVerPill.textContent = ver;
 
           if (setup) {
             const mb = (setup.size / (1024 * 1024)).toFixed(2);
             heroSetup.href = setup.browser_download_url;
             dlSetup.href = setup.browser_download_url;
-            heroSetupLabel.textContent = 'Tải cho Windows (' + mb + ' MB)';
-            dlSetupLabel.textContent = 'Tải Bộ Cài Đặt ' + ver + ' (' + mb + ' MB)';
+            heroSetupLabel.textContent = 'Tải Windows (' + mb + ' MB)';
+            dlSetupLabel.textContent = 'Tải Windows ' + ver + ' (' + mb + ' MB)';
             statSize.textContent = '~' + mb + ' MB';
+          }
+
+          if (macDmg) {
+            const mb = (macDmg.size / (1024 * 1024)).toFixed(2);
+            heroMac.href = macDmg.browser_download_url;
+            dlMac.href = macDmg.browser_download_url;
+            heroMacLabel.textContent = 'Tải macOS (' + mb + ' MB)';
+            dlMacLabel.textContent = 'Tải macOS ' + ver + ' (' + mb + ' MB)';
+          } else {
+            heroMacLabel.textContent = 'macOS (.dmg đang build)';
+            dlMacLabel.textContent = 'macOS (.dmg đang build)';
           }
 
           if (portable) {
             const mb = (portable.size / (1024 * 1024)).toFixed(2);
             heroPortable.href = portable.browser_download_url;
             dlPortable.href = portable.browser_download_url;
-            heroPortableLabel.textContent = 'Bản Portable (' + mb + ' MB)';
-            dlPortableLabel.textContent = 'Tải Bản Portable ' + ver + ' (' + mb + ' MB)';
+            heroPortableLabel.textContent = 'Portable (' + mb + ' MB)';
+            dlPortableLabel.textContent = 'Windows Portable (' + mb + ' MB)';
           }
 
           const dlText = totalDownloads > 0 ? ' · ' + totalDownloads.toLocaleString('vi-VN') + ' lượt tải' : '';

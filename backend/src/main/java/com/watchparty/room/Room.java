@@ -25,6 +25,8 @@ public class Room {
     private final String title;
     private final String pin;
     private final boolean pinned;
+    private final String hostToken;
+    private String hostSessionId;
     private final Map<String, Member> members = new LinkedHashMap<>();
     private final Deque<ChatMessage> chat = new ArrayDeque<>();
     private PlaybackState state;
@@ -41,9 +43,29 @@ public class Room {
         String cleanPin = pin == null ? "" : pin.strip();
         this.pin = cleanPin.isEmpty() ? null : cleanPin;
         this.pinned = pinned;
+        this.hostToken = pinned ? null : UUID.randomUUID().toString().replace("-", "");
         long now = System.currentTimeMillis();
         this.state = new PlaybackState(null, false, 0, now);
         this.lastActive = now;
+    }
+
+    public String getHostToken() {
+        return hostToken;
+    }
+
+    public synchronized boolean isHost(String sessionId, String candidateHostToken) {
+        if (pinned) {
+            return false;
+        }
+        if (sessionId != null && sessionId.equals(hostSessionId)) {
+            return true;
+        }
+        if (hostToken == null || candidateHostToken == null || candidateHostToken.isBlank()) {
+            return false;
+        }
+        byte[] expected = hostToken.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] actual = candidateHostToken.strip().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return java.security.MessageDigest.isEqual(expected, actual);
     }
 
     public String getId() {
@@ -95,7 +117,22 @@ public class Room {
     }
 
     public synchronized Member join(String sessionId, String name) {
-        Member m = new Member(sessionId, name);
+        return join(sessionId, name, null);
+    }
+
+    public synchronized Member join(String sessionId, String name, String candidateHostToken) {
+        boolean isHost = false;
+        if (!pinned && hostToken != null && candidateHostToken != null && !candidateHostToken.isBlank()) {
+            byte[] expected = hostToken.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] actual = candidateHostToken.strip().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (java.security.MessageDigest.isEqual(expected, actual)) {
+                this.hostSessionId = sessionId;
+                isHost = true;
+            }
+        } else if (!pinned && sessionId != null && sessionId.equals(hostSessionId)) {
+            isHost = true;
+        }
+        Member m = new Member(sessionId, name, false, false, false, isHost);
         members.put(sessionId, m);
         touch();
         return m;
@@ -103,6 +140,9 @@ public class Room {
 
     public synchronized Member leave(String sessionId) {
         touch();
+        if (sessionId != null && sessionId.equals(hostSessionId)) {
+            hostSessionId = null;
+        }
         return members.remove(sessionId);
     }
 
@@ -115,7 +155,7 @@ public class Room {
         if (current == null) {
             return null;
         }
-        Member updated = new Member(current.id(), current.name(), inVoice, muted, deafened);
+        Member updated = new Member(current.id(), current.name(), inVoice, muted, deafened, current.host());
         members.put(sessionId, updated);
         touch();
         return updated;
@@ -160,7 +200,8 @@ public class Room {
     }
 
     public synchronized RoomSnapshot snapshot(String you, long now) {
-        return new RoomSnapshot(id, title, hasPin(), you, state, new ArrayList<>(chat),
+        boolean isHost = you != null && you.equals(hostSessionId);
+        return new RoomSnapshot(id, title, hasPin(), isHost, you, state, new ArrayList<>(chat),
                 new ArrayList<>(members.values()), now);
     }
 

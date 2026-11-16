@@ -12,7 +12,10 @@ public final class Requests {
     public record VerifyPin(String pin) {
     }
 
-    public record Join(String name, String pin) {
+    public record Join(String name, String pin, String hostToken) {
+    }
+
+    public record CloseRoom(String hostToken) {
     }
 
     public record Chat(String text) {

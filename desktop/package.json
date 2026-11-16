@@ -1,10 +1,11 @@
 {
   "name": "xem-cung-desktop",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "scripts": {
     "tauri": "tauri",
-    "build:win": "tauri build"
+    "build:win": "tauri build",
+    "build:mac": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0"

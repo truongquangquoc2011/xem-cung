@@ -27,4 +27,8 @@ public record RoomEvent(String type, PlaybackState state, ChatMessage message, L
     public static RoomEvent voice(VoiceSignalPayload v, long now) {
         return new RoomEvent("VOICE", null, null, null, v, v.fromName(), now);
     }
+
+    public static RoomEvent closed(String by, long now) {
+        return new RoomEvent("CLOSED", null, null, null, null, by, now);
+    }
 }

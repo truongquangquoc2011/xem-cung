@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, resolveApiUrl } from '../api';
 import { nextEpisode } from '../episodes';
 import { Chat } from '../components/Chat';
@@ -57,7 +57,15 @@ export function RoomPage() {
   const { roomId = '' } = useParams();
   const id = roomId.toUpperCase();
   const location = useLocation();
+  const navigate = useNavigate();
   const navState = (location.state as NavState | null) ?? {};
+  const hostToken = useMemo(() => {
+    try {
+      return localStorage.getItem(`xemcung.host.${id}`) ?? '';
+    } catch {
+      return '';
+    }
+  }, [id]);
 
   const [exists, setExists] = useState<boolean | null>(null);
   const [roomMeta, setRoomMeta] = useState<RoomSummary | null>(null);
@@ -81,7 +89,7 @@ export function RoomPage() {
   }, [id]);
 
   const canConnect = Boolean(exists && name && (!roomMeta?.hasPin || pinVerified));
-  const room = useRoom(id, canConnect ? name : null, pin);
+  const room = useRoom(id, canConnect ? name : null, pin, hostToken);
   const sync = usePlaybackSync({ state: room.state, serverNow: room.serverNow, control: room.control });
   const source = room.state?.source;
   const connected = room.status === 'connected' && room.me !== null;
@@ -416,6 +424,52 @@ export function RoomPage() {
     setName(n);
   };
 
+  const [closingRoom, setClosingRoom] = useState(false);
+
+  const handleCloseRoom = async () => {
+    if (closingRoom) return;
+    if (!window.confirm('Đóng phòng này và ngắt kết nối tất cả mọi người?')) return;
+    setClosingRoom(true);
+    room.closeRoom(hostToken);
+    try {
+      await api.closeRoom(id, hostToken);
+    } catch {
+      /* phòng có thể đã đóng qua WS */
+    }
+    try {
+      localStorage.removeItem(`xemcung.host.${id}`);
+    } catch {
+      /* ignore */
+    }
+    if (voice.inVoice) voice.leaveVoice();
+    navigate('/');
+  };
+
+  useEffect(() => {
+    if (!room.closedReason) return;
+    if (voice.inVoice) voice.leaveVoice();
+    try {
+      localStorage.removeItem(`xemcung.host.${id}`);
+    } catch {
+      /* ignore */
+    }
+  }, [room.closedReason, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (room.closedReason) {
+    return (
+      <main className="center-page">
+        <div className="ticket">
+          <Logo />
+          <h1>Phòng đã đóng</h1>
+          <p className="muted">{room.closedReason}</p>
+          <Link className="btn btn-primary block" to="/">
+            ← Về trang chủ
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   if (exists === false) {
     return (
       <main className="center-page">
@@ -489,6 +543,22 @@ export function RoomPage() {
           <button className="pill-btn" onClick={copyLink}>
             {copied ? 'Đã chép ✓' : 'Mời bạn'}
           </button>
+          {(room.isHost || Boolean(hostToken)) && !roomMeta?.pinned && (
+            <button
+              type="button"
+              className="pill-btn"
+              disabled={closingRoom}
+              onClick={() => void handleCloseRoom()}
+              style={{
+                background: 'rgba(229, 9, 20, 0.18)',
+                borderColor: 'rgba(229, 9, 20, 0.5)',
+                color: '#fca5a5',
+              }}
+              title="Đóng phòng và ngắt kết nối toàn bộ người đang xem"
+            >
+              {closingRoom ? 'Đang đóng…' : 'Đóng phòng'}
+            </button>
+          )}
         </div>
 
         <div className="room-header-right">

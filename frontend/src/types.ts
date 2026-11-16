@@ -28,6 +28,7 @@ export interface Member {
   inVoice?: boolean;
   muted?: boolean;
   deafened?: boolean;
+  host?: boolean;
 }
 
 export interface VoiceSignalPayload {
@@ -39,7 +40,7 @@ export interface VoiceSignalPayload {
 }
 
 export interface RoomEvent {
-  type: 'STATE' | 'CHAT' | 'MEMBERS' | 'VOICE';
+  type: 'STATE' | 'CHAT' | 'MEMBERS' | 'VOICE' | 'CLOSED';
   state?: PlaybackState;
   message?: ChatMessage;
   members?: Member[];
@@ -55,12 +56,14 @@ export interface RoomSummary {
   hasPin: boolean;
   pinned: boolean;
   playingTitle?: string;
+  hostToken?: string;
 }
 
 export interface RoomSnapshot {
   roomId: string;
   roomTitle?: string;
   hasPin?: boolean;
+  isHost?: boolean;
   you: string;
   state: PlaybackState;
   chat: ChatMessage[];

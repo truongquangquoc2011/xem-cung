@@ -25,9 +25,21 @@ export function HomePage() {
   const [more, setMore] = useState<MovieSummary[]>([]);
   const [scrolled, setScrolled] = useState(false);
 
-  // Tìm kiếm & lọc thể loại ngay trên trang chủ
-  const [searchInput, setSearchInput] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
+  // Tìm kiếm & lọc thể loại ngay trên trang chủ (giữ nguyên từ khoá khi quay lại)
+  const [searchInput, setSearchInput] = useState(() => {
+    try {
+      return sessionStorage.getItem('xemcung.home.query') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [submittedQuery, setSubmittedQuery] = useState(() => {
+    try {
+      return (sessionStorage.getItem('xemcung.home.query') ?? '').trim();
+    } catch {
+      return '';
+    }
+  });
   const [selectedCategory, setSelectedCategory] = useState('');
   const [browsePage, setBrowsePage] = useState(1);
   const [browseData, setBrowseData] = useState<MoviePage | null>(null);
@@ -187,6 +199,13 @@ export function HomePage() {
       const customTitle = roomTitleInput.trim() || (initialMovieDetail ? `Phòng xem ${initialMovieDetail.title}` : `Phòng của ${n}`);
       const customPin = roomPinInput.trim();
       const created = await api.createRoom(customTitle, customPin);
+      if (created.hostToken) {
+        try {
+          localStorage.setItem(`xemcung.host.${created.id}`, created.hostToken);
+        } catch {
+          /* ignore */
+        }
+      }
       navigate(`/room/${created.id}`, {
         state: { name: n, pin: customPin, initialSource, initialMovieDetail },
       });
@@ -278,6 +297,11 @@ export function HomePage() {
   const submitHomeSearch = (e: FormEvent) => {
     e.preventDefault();
     const q = searchInput.trim();
+    try {
+      sessionStorage.setItem('xemcung.home.query', searchInput);
+    } catch {
+      /* ignore */
+    }
     setSelectedCategory('');
     setBrowsePage(1);
     setSubmittedQuery(q);

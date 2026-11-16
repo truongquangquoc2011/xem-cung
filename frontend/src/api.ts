@@ -57,6 +57,12 @@ export const api = {
       body: JSON.stringify({ title: title ?? '', pin: pin ?? '' }),
     }),
   getRoom: (id: string) => request<RoomSummary>(`/api/rooms/${encodeURIComponent(id)}`),
+  closeRoom: (id: string, hostToken: string) =>
+    request<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(id)}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostToken }),
+    }),
   verifyRoomPin: (id: string, pin: string) =>
     request<{ ok: boolean }>(`/api/rooms/${encodeURIComponent(id)}/verify-pin`, {
       method: 'POST',

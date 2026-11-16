@@ -11,6 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -22,12 +25,23 @@ public class RoomService {
     private static final Logger log = LoggerFactory.getLogger(RoomService.class);
     private static final String ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int ID_LENGTH = 6;
-    private static final Duration EMPTY_ROOM_TTL = Duration.ofHours(24);
+    private static final Duration EMPTY_ROOM_TTL = Duration.ofMinutes(15);
+    private static final Duration IDLE_ROOM_TTL = Duration.ofMinutes(45);
     /** Trần số phòng trong RAM, chống bị spam tạo phòng làm đầy bộ nhớ. */
     private static final int MAX_ROOMS = 500;
 
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
+    private final SimpMessagingTemplate broker;
+
+    public RoomService() {
+        this(null);
+    }
+
+    @Autowired
+    public RoomService(@Lazy SimpMessagingTemplate broker) {
+        this.broker = broker;
+    }
 
     @PostConstruct
     public void initDefaultRooms() {
@@ -90,19 +104,41 @@ public class RoomService {
         return find(id).orElseThrow(() -> new RoomNotFoundException(id));
     }
 
-    /** Xoá phòng không còn ai trong 24 giờ (không xoá phòng tạo sẵn cố định). */
-    @Scheduled(fixedDelay = 5 * 60 * 1000)
+    /** Chủ phòng đóng phòng: ngắt kết nối toàn bộ người đang xem và xoá phòng ngay lập tức. */
+    public void closeRoom(String id, String sessionId, String hostToken) {
+        Room room = get(id);
+        if (!room.isHost(sessionId, hostToken)) {
+            throw new IllegalArgumentException("Chỉ chủ phòng mới có quyền đóng phòng");
+        }
+        rooms.remove(room.getId());
+        log.info("Chủ phòng đóng phòng {}", room.getId());
+        if (broker != null) {
+            broker.convertAndSend("/topic/room/" + room.getId(),
+                    RoomEvent.closed("Chủ phòng đã đóng phòng", System.currentTimeMillis()));
+        }
+    }
+
+    /** Xoá phòng trống quá 15 phút hoặc phòng không có phản hồi/thao tác quá 45 phút. */
+    @Scheduled(fixedDelay = 60 * 1000)
     public void cleanup() {
-        long cutoff = System.currentTimeMillis() - EMPTY_ROOM_TTL.toMillis();
+        long now = System.currentTimeMillis();
+        long emptyCutoff = now - EMPTY_ROOM_TTL.toMillis();
+        long idleCutoff = now - IDLE_ROOM_TTL.toMillis();
         rooms.values().removeIf(r -> {
             if (r.isPinned()) {
                 return false;
             }
-            boolean stale = r.memberCount() == 0 && r.getLastActive() < cutoff;
-            if (stale) {
-                log.info("Xoá phòng trống {}", r.getId());
+            boolean emptyStale = r.memberCount() == 0 && r.getLastActive() < emptyCutoff;
+            boolean idleStale = r.getLastActive() < idleCutoff;
+            if (emptyStale || idleStale) {
+                log.info("Xoá phòng {} (trống={}, không phản hồi={})", r.getId(), emptyStale, idleStale);
+                if (idleStale && r.memberCount() > 0 && broker != null) {
+                    broker.convertAndSend("/topic/room/" + r.getId(),
+                            RoomEvent.closed("Phòng đã tự đóng do không có hoạt động", now));
+                }
+                return true;
             }
-            return stale;
+            return false;
         });
     }
 

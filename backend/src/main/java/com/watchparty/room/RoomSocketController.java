@@ -63,11 +63,19 @@ public class RoomSocketController {
         }
         attrs.put(ATTR_ROOM, room.getId());
 
-        Member m = room.join(sid, cleanName(req == null ? null : req.name()));
+        Member m = room.join(sid, cleanName(req == null ? null : req.name()),
+                req == null ? null : req.hostToken());
         long now = System.currentTimeMillis();
         publish(room, RoomEvent.members(room.members(), now));
         publishChat(room, room.addChat("SYSTEM", null, m.name() + " đã vào phòng"));
         return room.snapshot(sid, System.currentTimeMillis());
+    }
+
+    @MessageMapping("/room/{roomId}/close")
+    public void close(@DestinationVariable String roomId,
+                      Requests.CloseRoom req,
+                      SimpMessageHeaderAccessor headers) {
+        rooms.closeRoom(roomId, headers.getSessionId(), req == null ? null : req.hostToken());
     }
 
     @MessageMapping("/room/{roomId}/control")
