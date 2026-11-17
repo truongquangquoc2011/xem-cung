@@ -9,7 +9,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>Đoán PIN: tối đa 5 lần sai / 5 phút cho mỗi IP + phòng, và 30 lần sai / 5 phút cho mỗi phòng.</li>
  *   <li>Tạo phòng: tối đa 10 phòng / 10 phút cho mỗi IP.</li>
- *   <li>Chat: 8 tin / 5 giây; điều khiển phát: 20 lệnh / 5 giây; tín hiệu voice: 120 / 5 giây (mỗi kết nối).</li>
+ *   <li>Chat: 8 tin / 5 giây; điều khiển phát: 20 lệnh / 5 giây (mỗi kết nối).</li>
+ *   <li>Voice: tín hiệu kết nối WebRTC (offer/answer/ice) 400 / 5 giây — rộng để không rơi gói ICE;
+ *       tín hiệu "đang nói" 25 / 5 giây; đổi trạng thái mic 30 / 5 giây.</li>
  * </ul>
  */
 @Component
@@ -20,7 +22,10 @@ public class AbuseGuard {
     private final RateLimiter roomCreation = new RateLimiter(10, 10 * 60_000L);
     private final RateLimiter chat = new RateLimiter(8, 5_000L);
     private final RateLimiter control = new RateLimiter(20, 5_000L);
-    private final RateLimiter voice = new RateLimiter(120, 5_000L);
+    /** Tín hiệu bắt tay WebRTC: phải rộng, rơi 1 gói ICE là kết nối dễ treo. */
+    private final RateLimiter voiceSignal = new RateLimiter(400, 5_000L);
+    private final RateLimiter voiceSpeaking = new RateLimiter(25, 5_000L);
+    private final RateLimiter voiceState = new RateLimiter(30, 5_000L);
 
     /** Ném lỗi nếu IP này (hoặc cả phòng) đã nhập sai PIN quá nhiều lần. */
     public void checkPinAllowed(String clientKey, String roomId) {
@@ -56,15 +61,21 @@ public class AbuseGuard {
         }
     }
 
-    /** Tín hiệu voice quá nhiều thì bỏ qua lặng lẽ (không báo lỗi làm phiền). */
-    public boolean allowVoice(String sessionId) {
-        return voice.tryAcquire(sessionId);
+    /** Tín hiệu voice quá nhiều thì bỏ qua lặng lẽ (không báo lỗi làm phiền). Mỗi loại một hạn mức riêng. */
+    public boolean allowVoiceSignal(String sessionId, String type) {
+        return "speaking".equals(type) ? voiceSpeaking.tryAcquire(sessionId) : voiceSignal.tryAcquire(sessionId);
+    }
+
+    public boolean allowVoiceState(String sessionId) {
+        return voiceState.tryAcquire(sessionId);
     }
 
     public void forgetSession(String sessionId) {
         chat.reset(sessionId);
         control.reset(sessionId);
-        voice.reset(sessionId);
+        voiceSignal.reset(sessionId);
+        voiceSpeaking.reset(sessionId);
+        voiceState.reset(sessionId);
     }
 
     @Scheduled(fixedDelay = 60_000L)
@@ -74,6 +85,8 @@ public class AbuseGuard {
         roomCreation.cleanup();
         chat.cleanup();
         control.cleanup();
-        voice.cleanup();
+        voiceSignal.cleanup();
+        voiceSpeaking.cleanup();
+        voiceState.cleanup();
     }
 }

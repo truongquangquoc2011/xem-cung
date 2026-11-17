@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { ContinueRow } from '../components/ContinueRow';
 import { EpisodePicker } from '../components/EpisodePicker';
 import { Logo } from '../components/Logo';
 import { PosterRow } from '../components/PosterRow';
+import { listProgress, removeProgress, type WatchProgress } from '../progress';
 import { HOT_PERIODS, MOVIE_CATEGORIES, type HotPeriod } from '../constants/movies';
 import type { MovieDetail, MoviePage, MovieSummary, RoomSummary, VideoSource } from '../types';
 import { loadName, saveName, toVideoSource } from '../utils';
@@ -24,6 +26,7 @@ export function HomePage() {
   const [popular, setPopular] = useState<MovieSummary[]>([]);
   const [more, setMore] = useState<MovieSummary[]>([]);
   const [scrolled, setScrolled] = useState(false);
+  const [continueItems, setContinueItems] = useState<WatchProgress[]>(() => listProgress());
 
   // Tìm kiếm & lọc thể loại ngay trên trang chủ (giữ nguyên từ khoá khi quay lại)
   const [searchInput, setSearchInput] = useState(() => {
@@ -255,8 +258,13 @@ export function HomePage() {
     }
   };
 
-  /** Chọn phim -> nếu có 1 tập chiếu luôn, nếu nhiều tập thì mở bảng chọn tập trước khi vào phòng. */
-  const watchMovie = async (m: MovieSummary) => {
+  /** Xem một mình: mở trang xem riêng, không tạo phòng, không cần nhập tên. */
+  const watchSolo = (m: MovieSummary) => {
+    navigate(`/xem/${encodeURIComponent(m.id)}`);
+  };
+
+  /** Xem cùng bạn bè: 1 tập thì tạo phòng chiếu luôn, nhiều tập thì chọn tập trước khi vào phòng. */
+  const watchTogether = async (m: MovieSummary) => {
     if (!requireName()) return;
     setBusy(m.id);
     setError(null);
@@ -398,23 +406,19 @@ export function HomePage() {
                   type="button"
                   className="btn btn-play-hero"
                   disabled={!!busy}
-                  onClick={() => watchMovie(activeSlide.movie)}
+                  onClick={() => watchSolo(activeSlide.movie)}
+                  title="Xem một mình, không cần tạo phòng"
                 >
-                  <span aria-hidden="true">▶</span> {busy === activeSlide.movie.id ? 'Đang mở…' : 'Phát ngay'}
+                  <span aria-hidden="true">▶</span> Xem ngay
                 </button>
                 <button
                   type="button"
                   className="btn btn-info-hero"
                   disabled={!!busy}
-                  onClick={async () => {
-                    if (activeDetail) {
-                                            setPickedDetail(activeDetail);
-                    } else {
-                      await watchMovie(activeSlide.movie);
-                    }
-                  }}
+                  onClick={() => void watchTogether(activeSlide.movie)}
+                  title="Tạo phòng để xem đồng bộ cùng bạn bè"
                 >
-                  ⓘ Thông tin &amp; Tập
+                  👥 {busy === activeSlide.movie.id ? 'Đang mở phòng…' : 'Xem cùng bạn bè'}
                 </button>
               </>
             )}
@@ -478,6 +482,15 @@ export function HomePage() {
       </header>
 
       <main className="home-rows">
+        <ContinueRow
+          items={continueItems}
+          onPick={(p) => navigate(`/xem/${encodeURIComponent(p.movieId)}?tap=${p.epIndex}`)}
+          onRemove={(p) => {
+            removeProgress(p.movieId);
+            setContinueItems(listProgress());
+          }}
+        />
+
         <section className="home-rooms-section" aria-label="Danh sách phòng đang mở và phòng tạo sẵn">
           <div className="rooms-sec-head">
             <div>
@@ -608,7 +621,7 @@ export function HomePage() {
                         <button
                           key={m.id}
                           className="movie-card"
-                          onClick={() => watchMovie(m)}
+                          onClick={() => watchSolo(m)}
                           disabled={!!busy}
                         >
                           <div className="poster-wrap">
@@ -674,12 +687,12 @@ export function HomePage() {
             items={hotLoading ? [] : hotItems}
             busyId={busy}
             ranked
-            onPick={watchMovie}
+            onPick={watchSolo}
           />
         </section>
 
-        <PosterRow title="Mới cập nhật trong kho" items={popular} busyId={busy} onPick={watchMovie} />
-        <PosterRow title="Đề xuất xem chung" items={more} busyId={busy} onPick={watchMovie} />
+        <PosterRow title="Mới cập nhật trong kho" items={popular} busyId={busy} onPick={watchSolo} />
+        <PosterRow title="Đề xuất xem chung" items={more} busyId={busy} onPick={watchSolo} />
 
         <section className="how">
           <h2 className="row-title">Cách hoạt động</h2>

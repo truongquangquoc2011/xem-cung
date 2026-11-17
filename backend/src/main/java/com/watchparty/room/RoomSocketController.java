@@ -104,7 +104,7 @@ public class RoomSocketController {
     @MessageMapping("/room/{roomId}/voice/state")
     public void voiceState(@DestinationVariable String roomId, Requests.VoiceState req,
                            SimpMessageHeaderAccessor headers) {
-        if (req == null || !guard.allowVoice(headers.getSessionId())) return;
+        if (req == null || !guard.allowVoiceState(headers.getSessionId())) return;
         Room room = rooms.get(roomId);
         Member prev = requireMember(room, headers);
         Member updated = room.updateVoiceState(headers.getSessionId(), req.inVoice(), req.muted(), req.deafened());
@@ -122,7 +122,7 @@ public class RoomSocketController {
     @MessageMapping("/room/{roomId}/voice/signal")
     public void voiceSignal(@DestinationVariable String roomId, Requests.VoiceSignal req,
                             SimpMessageHeaderAccessor headers) {
-        if (req == null || req.type() == null || !guard.allowVoice(headers.getSessionId())) return;
+        if (req == null || req.type() == null || !guard.allowVoiceSignal(headers.getSessionId(), req.type())) return;
         Room room = rooms.get(roomId);
         Member sender = requireMember(room, headers);
         long now = System.currentTimeMillis();

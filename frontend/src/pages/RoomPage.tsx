@@ -25,6 +25,10 @@ interface NavState {
   pin?: string;
   initialSource?: VideoSource;
   initialMovieDetail?: MovieDetail;
+  /** Đến từ "Xem một mình" -> "Mời bạn xem cùng": tiếp tục đúng giây đang xem. */
+  initialPosition?: number;
+  /** Link mời đã được chép vào clipboard trước khi vào phòng. */
+  copiedInvite?: boolean;
 }
 
 function normalizeForMatch(s: string): string {
@@ -103,7 +107,14 @@ export function RoomPage() {
   });
 
   const [playerError, setPlayerError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Đến từ "Mời bạn xem cùng": link mời đã được chép sẵn -> báo cho người dùng biết vài giây
+  const [copied, setCopied] = useState(Boolean(navState.copiedInvite));
+  useEffect(() => {
+    if (!navState.copiedInvite) return;
+    const t = window.setTimeout(() => setCopied(false), 4000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [floats, setFloats] = useState<FloatingEmoji[]>([]);
   const [marqueeChats, setMarqueeChats] = useState<Array<{ id: string; user: string; text: string; lane: number }>>([]);
   const danmakuLaneRef = useRef(0);
@@ -289,8 +300,13 @@ export function RoomPage() {
   useEffect(() => {
     if (!connected || initialLoaded.current || !room.state) return;
     initialLoaded.current = true;
-    if (navState.initialSource && !room.state.source) control('load', 0, navState.initialSource);
-  }, [connected, room.state, navState.initialSource, control]);
+    if (navState.initialSource && !room.state.source) {
+      const startAt = Math.max(0, Math.floor(navState.initialPosition ?? 0));
+      control('load', startAt, navState.initialSource);
+      // Gửi kèm lệnh tua để chắc chắn bắt đầu đúng giây (kể cả backend cũ luôn load từ 0:00)
+      if (startAt > 1) control('seek', startAt);
+    }
+  }, [connected, room.state, navState.initialSource, navState.initialPosition, control]);
 
   // Đổi video -> reset trình phát & tra cứu mốc Skip Intro/Outro (AniSkip)
   const { resetPlayer } = sync;

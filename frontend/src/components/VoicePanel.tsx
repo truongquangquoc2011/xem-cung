@@ -17,6 +17,7 @@ const METER_SEGMENTS = 32;
  */
 export function VoicePanel({ me, members, connected, voice }: Props) {
   const [testOpen, setTestOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
 
   const voiceMembers = members.filter((m) => m.inVoice || (m.id === me && voice.inVoice));
 
@@ -38,6 +39,16 @@ export function VoicePanel({ me, members, connected, voice }: Props) {
         </div>
 
         <div className="voice-head-actions">
+          <button
+            type="button"
+            className={`voice-btn ghost icon-only ${devicesOpen ? 'active' : ''}`}
+            onClick={() => setDevicesOpen((o) => !o)}
+            title="Chọn mic (đầu vào) và loa / tai nghe (đầu ra)"
+            aria-label="Thiết bị âm thanh"
+            aria-expanded={devicesOpen}
+          >
+            ⚙️
+          </button>
           <button
             type="button"
             className={`voice-btn ghost ${testOpen || voice.testingMic ? 'active' : ''}`}
@@ -69,6 +80,60 @@ export function VoicePanel({ me, members, connected, voice }: Props) {
         </div>
       </div>
 
+      {/* Chọn thiết bị đầu vào / đầu ra */}
+      {devicesOpen && (
+        <div className="voice-devices" aria-label="Thiết bị âm thanh">
+          <label className="voice-field">
+            <span>🎤 Đầu vào (Microphone)</span>
+            <select
+              value={voice.selectedMicId}
+              onChange={(e) => voice.setSelectedMicId(e.target.value)}
+              disabled={voice.demoMic}
+            >
+              <option value="">Mặc định của hệ thống</option>
+              {voice.micDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="voice-field">
+            <span>🎧 Đầu ra (Loa / Tai nghe)</span>
+            {voice.canPickSpeaker ? (
+              <select value={voice.selectedSpeakerId} onChange={(e) => voice.setSelectedSpeakerId(e.target.value)}>
+                <option value="">Mặc định của hệ thống</option>
+                {voice.speakerDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="voice-hint">Trình duyệt này chưa cho chọn loa — đổi loa trong cài đặt âm thanh của máy.</span>
+            )}
+          </label>
+
+          <label className="voice-field">
+            <span>🔊 Âm lượng nghe: {voice.outputVolPct}%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={voice.outputVolPct}
+              onChange={(e) => voice.setOutputVolPct(Number(e.target.value))}
+            />
+          </label>
+
+          {voice.micDevices.some((d) => d.label.startsWith('Microphone ')) && (
+            <p className="voice-hint">Cho phép quyền mic (bấm Tham gia Voice hoặc Test Mic) để thấy tên thiết bị.</p>
+          )}
+          <p className="voice-hint muted">Đổi mic khi đang trong Voice sẽ áp dụng ngay, không cần vào lại.</p>
+        </div>
+      )}
+
       {/* Danh sách người đang trong kênh thoại */}
       <div className="voice-members">
         {voiceMembers.length === 0 ? (
@@ -97,20 +162,17 @@ export function VoicePanel({ me, members, connected, voice }: Props) {
                     <span className="voice-member-name">
                       {m.name} {isMe && <em className="voice-you">(Bạn)</em>}
                     </span>
-                    <span className="voice-member-state">
+                    {/* Không ghi "Đang nói" nữa: người đang nói được nhận ra bằng viền xanh sáng quanh avatar */}
+                    <span className={`voice-member-state ${!isMe && peerState !== 'connected' ? 'pending' : ''}`}>
                       {isDeafened
                         ? '🔕 Đã tắt tiếng'
                         : isMuted
                           ? '🔇 Đã tắt mic'
-                          : isSpeaking
-                            ? '🟢 Đang nói…'
-                            : isMe
-                              ? 'Đã kết nối'
-                              : peerState === 'connected'
-                                ? 'Đã kết nối RTC'
-                                : peerState === 'failed'
-                                  ? '⚠️ Lỗi kết nối RTC'
-                                  : 'Đang đồng bộ…'}
+                          : isMe || peerState === 'connected'
+                            ? 'Đã kết nối'
+                            : peerState === 'failed'
+                              ? '⚠️ Mất kết nối, đang thử lại…'
+                              : 'Đang kết nối…'}
                     </span>
                   </div>
                   <div className="voice-member-icons">

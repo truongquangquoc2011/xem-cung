@@ -37,6 +37,7 @@ export function YouTubePlayer({ videoId, ...callbacks }: Props) {
             player?.seekTo(t, true);
           },
           getTime: () => player?.getCurrentTime() ?? 0,
+          getDuration: () => player?.getDuration() ?? 0,
           isPlaying: () => {
             const s = player?.getPlayerState();
             return s === YT.PlayerState.PLAYING || s === YT.PlayerState.BUFFERING;
