@@ -2,7 +2,9 @@ name: Keep Render Backend Awake
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # 01:00–18:55 UTC = 08:00 sáng đến 02:00 sáng hôm sau (giờ Việt Nam UTC+7)
+    # Nghỉ từ 02:00–08:00 sáng (~540 giờ/tháng, dư ~210 giờ trong gói 750 giờ Render Free)
+    - cron: '*/5 1-18 * * *'
   workflow_dispatch:
 
 jobs:
