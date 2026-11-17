@@ -209,7 +209,29 @@ export function HtmlVideoPlayer({
     const isHls = /\.m3u8(\?|#|$)|\/master\?/i.test(playUrl);
     if (isHls && Hls.isSupported()) {
       let useLocalProxy = Boolean(cachedLocalProxyBase);
+      const DefaultLoader = Hls.DefaultConfig.loader;
+      class CleanPlaylistLoader extends DefaultLoader {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        load(context: any, config: any, callbacks: any) {
+          const origOnSuccess = callbacks.onSuccess;
+          if (context.type === 'manifest' || context.type === 'level') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            callbacks.onSuccess = (response: any, stats: any, ctx: any, networkDetails: any) => {
+              if (typeof response.data === 'string' && response.data.includes('#EXT-X-DISCONTINUITY')) {
+                response.data = response.data.replace(
+                  /#EXT-X-DISCONTINUITY\s*(?:#EXT-X-KEY:METHOD=NONE\s*)?(?:#EXTINF:[\d.]+,\s*(?:\/v\d+\/[0-9a-f]{16,}\/|[^\r\n]*adjump)[^\r\n]+\s*)+#EXT-X-DISCONTINUITY\s*/gi,
+                  '',
+                );
+              }
+              origOnSuccess(response, stats, ctx, networkDetails);
+            };
+          }
+          super.load(context, config, callbacks);
+        }
+      }
+
       hls = new Hls({
+        pLoader: CleanPlaylistLoader as unknown as NonNullable<Hls['config']['pLoader']>,
         enableWorker: true,
         startFragPrefetch: true,
         maxBufferLength: 20,
@@ -276,6 +298,7 @@ export function HtmlVideoPlayer({
       getTime: () => video.currentTime,
       isPlaying: () => !video.paused && !video.ended,
       isSeeking: () => video.seeking || isDraggingRef.current,
+      getDuration: () => (Number.isFinite(video.duration) ? video.duration : 0),
     };
 
     let readyFired = false;

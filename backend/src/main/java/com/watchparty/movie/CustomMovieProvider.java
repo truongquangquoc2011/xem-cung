@@ -42,7 +42,9 @@ public class CustomMovieProvider implements MovieProvider {
     private static final Pattern VSMOV_EMBED = Pattern.compile("^https?://([A-Za-z0-9.-]+\\.streamvsmov\\.com)/video/([A-Za-z0-9-]+)$");
 
     private final RestClient http;
+    private final RestClient nguonCFallbackHttp;
     private final boolean isNguonC;
+    private final boolean isPhimApi;
 
     public CustomMovieProvider(@Value("${movies.custom.base-url}") String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
@@ -50,8 +52,13 @@ public class CustomMovieProvider implements MovieProvider {
         }
         String cleanBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.isNguonC = cleanBase.contains("nguonc.com");
+        this.isPhimApi = cleanBase.contains("phimapi.com") || cleanBase.contains("kkphim");
         this.http = RestClient.builder()
                 .baseUrl(cleanBase)
+                .defaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                .build();
+        this.nguonCFallbackHttp = RestClient.builder()
+                .baseUrl("https://phim.nguonc.com/api")
                 .defaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .build();
     }
@@ -97,6 +104,29 @@ public class CustomMovieProvider implements MovieProvider {
                         .retrieve()
                         .body(JsonNode.class);
             }
+        } else if (isPhimApi) {
+            if (!q.isEmpty()) {
+                root = http.get()
+                        .uri(b -> b.path("/v1/api/tim-kiem")
+                                .queryParam("keyword", q)
+                                .queryParam("page", targetPage)
+                                .queryParam("limit", 24)
+                                .build())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } else {
+                String path = resolvePhimApiPath(cat);
+                root = http.get()
+                        .uri(b -> {
+                            var builder = b.path(path).queryParam("page", targetPage);
+                            if (path.startsWith("/v1/api/")) {
+                                builder.queryParam("limit", 24);
+                            }
+                            return builder.build();
+                        })
+                        .retrieve()
+                        .body(JsonNode.class);
+            }
         } else {
             if (!q.isEmpty()) {
                 root = http.get()
@@ -120,24 +150,37 @@ public class CustomMovieProvider implements MovieProvider {
             return new MoviePage(List.of(), targetPage, 1);
         }
 
-        String pathImage = text(root.path("pathImage"));
+        JsonNode dataNode = root.path("data").isObject() ? root.path("data") : root;
+        String pathImage = text(dataNode.path("APP_DOMAIN_CDN_IMAGE"));
+        if (pathImage.isEmpty()) {
+            pathImage = text(root.path("pathImage"));
+        }
+        if (pathImage.isEmpty() && isPhimApi) {
+            pathImage = "https://phimimg.com";
+        }
+
+        JsonNode itemsNode = dataNode.path("items").isArray() ? dataNode.path("items") : root.path("items");
         List<MovieSummary> items = new ArrayList<>();
-        for (JsonNode item : root.path("items")) {
+        for (JsonNode item : itemsNode) {
             String slug = text(item.path("slug"));
             if (slug.isEmpty()) {
                 continue;
             }
             // Bỏ qua các mục chỉ mới có Trailer trên danh sách nếu rõ ràng ghi "Trailer"
-            String currentEp = text(item.path("current_episode"));
+            String currentEp = !text(item.path("episode_current")).isEmpty()
+                    ? text(item.path("episode_current"))
+                    : text(item.path("current_episode"));
             if ("Trailer".equalsIgnoreCase(currentEp)) {
                 continue;
             }
             String title = text(item.path("name"));
             String year = extractYear(item);
-            String poster = resolveImage(item, pathImage);
-            String backdrop = resolveBackdrop(item, pathImage, poster);
+            String poster = resolveImage(item, pathImage, isPhimApi);
+            String backdrop = resolveBackdrop(item, pathImage, poster, isPhimApi);
             String quality = text(item.path("quality"));
-            String lang = text(item.path("language"));
+            String lang = !text(item.path("lang")).isEmpty()
+                    ? text(item.path("lang"))
+                    : text(item.path("language"));
             String badge = !quality.isEmpty() && !lang.isEmpty() ? (quality + " · " + lang) : (!quality.isEmpty() ? quality : lang);
             items.add(new MovieSummary(slug, title, year, poster, currentEp, badge, backdrop));
         }
@@ -159,7 +202,9 @@ public class CustomMovieProvider implements MovieProvider {
             int totalPages = Math.max(1, paginate.path("total_page").asInt(1));
             return new MoviePage(items, currentPage, totalPages);
         } else {
-            JsonNode pagination = root.path("pagination");
+            JsonNode pagination = dataNode.path("params").path("pagination").isObject()
+                    ? dataNode.path("params").path("pagination")
+                    : root.path("pagination");
             int currentPage = pagination.path("currentPage").asInt(targetPage);
             int totalPages = Math.max(1, pagination.path("totalPages").asInt(1));
             return new MoviePage(items, currentPage, totalPages);
@@ -177,6 +222,22 @@ public class CustomMovieProvider implements MovieProvider {
             return "/films/quoc-gia/" + cat;
         }
         return "/films/the-loai/" + cat;
+    }
+
+    private static String resolvePhimApiPath(String cat) {
+        if (cat.isEmpty() || "all".equals(cat) || !SAFE_SLUG.matcher(cat).matches()) {
+            return "/danh-sach/phim-moi-cap-nhat";
+        }
+        if ("phim-dang-chieu".equals(cat)) {
+            return "/v1/api/danh-sach/phim-bo";
+        }
+        if (LIST_SLUGS.contains(cat)) {
+            return "/v1/api/danh-sach/" + cat;
+        }
+        if (COUNTRY_SLUGS.contains(cat)) {
+            return "/v1/api/quoc-gia/" + cat;
+        }
+        return "/v1/api/the-loai/" + cat;
     }
 
     private static String resolveVsmovPath(String cat) {
@@ -198,17 +259,33 @@ public class CustomMovieProvider implements MovieProvider {
             throw new IllegalArgumentException("Mã phim (slug) không hợp lệ");
         }
 
-        JsonNode root = http.get()
-                .uri(isNguonC ? "/film/{slug}" : "/phim/{slug}", id)
-                .retrieve()
-                .body(JsonNode.class);
-
-        if (root == null) {
-            throw new IllegalArgumentException("Không tìm thấy phim");
+        JsonNode root = null;
+        try {
+            root = http.get()
+                    .uri(isNguonC ? "/film/{slug}" : "/phim/{slug}", id)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (Exception ignored) {
+            /* thử fallback bên dưới */
         }
-        String statusText = text(root.path("status"));
-        boolean okStatus = root.path("status").asBoolean(false) || "success".equalsIgnoreCase(statusText);
-        if (!okStatus) {
+
+        boolean okStatus = root != null && (root.path("status").asBoolean(false)
+                || "success".equalsIgnoreCase(text(root.path("status"))));
+        boolean usedNguonCFallback = false;
+        if (!okStatus && !isNguonC) {
+            try {
+                root = nguonCFallbackHttp.get()
+                        .uri("/film/{slug}", id)
+                        .retrieve()
+                        .body(JsonNode.class);
+                okStatus = root != null && (root.path("status").asBoolean(false)
+                        || "success".equalsIgnoreCase(text(root.path("status"))));
+                usedNguonCFallback = okStatus;
+            } catch (Exception ignored) {
+                /* không có trên Nguồn C */
+            }
+        }
+        if (!okStatus || root == null) {
             throw new IllegalArgumentException("Không tìm thấy phim");
         }
 
@@ -227,7 +304,8 @@ public class CustomMovieProvider implements MovieProvider {
                 : text(movie.path("content"));
         String description = HTML_TAG.matcher(rawDesc).replaceAll("").strip();
         String year = extractYear(movie);
-        String poster = resolveImage(movie, text(root.path("pathImage")));
+        String defaultImgBase = (isPhimApi && !usedNguonCFallback) ? "https://phimimg.com" : text(root.path("pathImage"));
+        String poster = resolveImage(movie, defaultImgBase, isPhimApi && !usedNguonCFallback);
 
         JsonNode servers = movie.path("episodes").isArray() ? movie.path("episodes") : root.path("episodes");
         int serverCount = servers.isArray() ? servers.size() : 0;
@@ -319,30 +397,34 @@ public class CustomMovieProvider implements MovieProvider {
         return "";
     }
 
-    private static String resolveBackdrop(JsonNode item, String pathImage, String fallback) {
-        String posterUrl = text(item.path("poster_url"));
-        if (posterUrl.isEmpty()) {
+    private static String resolveBackdrop(JsonNode item, String pathImage, String fallback, boolean isPhimApi) {
+        // Trên KKPhim (phimapi.com), thumb_url là ảnh ngang backdrop 16:9; trên Nguồn C là poster_url
+        String raw = isPhimApi ? text(item.path("thumb_url")) : text(item.path("poster_url"));
+        if (raw.isEmpty()) {
             return fallback;
         }
-        if (posterUrl.startsWith("http://") || posterUrl.startsWith("https://")) {
-            return posterUrl;
+        if (raw.startsWith("http://") || raw.startsWith("https://")) {
+            return raw;
         }
         if (!pathImage.isEmpty()) {
             String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
-            String cleanPath = posterUrl.startsWith("/") ? posterUrl.substring(1) : posterUrl;
+            String cleanPath = raw.startsWith("/") ? raw.substring(1) : raw;
             return prefix + cleanPath;
         }
         return fallback;
     }
 
     /**
-     * Lấy ảnh từ poster_url hoặc thumb_url. Hỗ trợ cả ảnh WebP chất lượng cao của Nguồn C.
+     * Lấy ảnh poster dọc (2:3):
+     * - KKPhim (phimapi.com): poster_url là poster dọc, thumb_url là backdrop ngang.
+     * - Nguồn C: thumb_url là poster dọc, poster_url là backdrop ngang.
      */
-    private static String resolveImage(JsonNode item, String pathImage) {
+    private static String resolveImage(JsonNode item, String pathImage, boolean isPhimApi) {
         String thumb = text(item.path("thumb_url"));
         String poster = text(item.path("poster_url"));
-        // Trên Nguồn C, thumb_url là poster dọc chuẩn tỉ lệ 2:3, còn poster_url là ảnh ngang backdrop
-        String chosen = !thumb.isEmpty() ? thumb : poster;
+        String chosen = isPhimApi
+                ? (!poster.isEmpty() ? poster : thumb)
+                : (!thumb.isEmpty() ? thumb : poster);
         if (chosen.isEmpty()) {
             return "";
         }
