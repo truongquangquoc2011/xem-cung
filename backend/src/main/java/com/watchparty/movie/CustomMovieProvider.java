@@ -76,7 +76,7 @@ public class CustomMovieProvider implements MovieProvider {
         String per = period == null ? "" : period.strip().toLowerCase();
 
         // Chế độ Hot theo thời gian (today / week / month) khi chưa nhập từ khoá tìm kiếm
-        if (q.isEmpty() && cat.isEmpty() && !per.isEmpty()) {
+        if (q.isEmpty() && cat.isEmpty() && !per.isEmpty() && !isPhimApi) {
             int offsetPage = switch (per) {
                 case "today" -> p;
                 case "week" -> p + 1;
@@ -88,6 +88,7 @@ public class CustomMovieProvider implements MovieProvider {
 
         final int targetPage = p;
         JsonNode root;
+        List<JsonNode> prependItems = List.of();
         if (isNguonC) {
             if (!q.isEmpty()) {
                 root = http.get()
@@ -114,7 +115,53 @@ public class CustomMovieProvider implements MovieProvider {
                                 .build())
                         .retrieve()
                         .body(JsonNode.class);
+            } else if (cat.isEmpty() && !per.isEmpty()) {
+                // Bảng xếp hạng Hot thực tế trên KKPhim theo từng khung thời gian
+                root = switch (per) {
+                    case "week" -> http.get()
+                            .uri(b -> b.path("/v1/api/danh-sach/phim-bo")
+                                    .queryParam("page", targetPage)
+                                    .queryParam("limit", 24)
+                                    .queryParam("year", 2026)
+                                    .build())
+                            .retrieve()
+                            .body(JsonNode.class);
+                    case "month" -> http.get()
+                            .uri(b -> b.path("/v1/api/danh-sach/phim-chieu-rap")
+                                    .queryParam("page", targetPage)
+                                    .queryParam("limit", 24)
+                                    .build())
+                            .retrieve()
+                            .body(JsonNode.class);
+                    default -> http.get()
+                            .uri(b -> b.path("/danh-sach/phim-moi-cap-nhat")
+                                    .queryParam("page", targetPage)
+                                    .build())
+                            .retrieve()
+                            .body(JsonNode.class);
+                };
             } else {
+                // Với mục Việt Nam trang 1: ưu tiên đưa các phim chiếu rạp Việt Nam (ảnh ngang FHD sắc nét) lên đầu
+                if ("viet-nam".equals(cat) && targetPage == 1) {
+                    try {
+                        JsonNode vnCinema = http.get()
+                                .uri(b -> b.path("/v1/api/danh-sach/phim-chieu-rap")
+                                        .queryParam("country", "viet-nam")
+                                        .queryParam("page", 1)
+                                        .queryParam("limit", 8)
+                                        .build())
+                                .retrieve()
+                                .body(JsonNode.class);
+                        JsonNode cinemaItems = vnCinema != null ? vnCinema.path("data").path("items") : null;
+                        if (cinemaItems != null && cinemaItems.isArray()) {
+                            List<JsonNode> tmp = new ArrayList<>();
+                            cinemaItems.forEach(tmp::add);
+                            prependItems = tmp;
+                        }
+                    } catch (Exception ignored) {
+                        /* fallback bình thường */
+                    }
+                }
                 String path = resolvePhimApiPath(cat);
                 root = http.get()
                         .uri(b -> {
@@ -160,10 +207,15 @@ public class CustomMovieProvider implements MovieProvider {
         }
 
         JsonNode itemsNode = dataNode.path("items").isArray() ? dataNode.path("items") : root.path("items");
+        List<JsonNode> mergedNodes = new ArrayList<>(prependItems);
+        if (itemsNode.isArray()) {
+            itemsNode.forEach(mergedNodes::add);
+        }
+        java.util.Set<String> seenSlugs = new java.util.HashSet<>();
         List<MovieSummary> items = new ArrayList<>();
-        for (JsonNode item : itemsNode) {
+        for (JsonNode item : mergedNodes) {
             String slug = text(item.path("slug"));
-            if (slug.isEmpty()) {
+            if (slug.isEmpty() || !seenSlugs.add(slug)) {
                 continue;
             }
             // Bỏ qua các mục chỉ mới có Trailer trên danh sách nếu rõ ràng ghi "Trailer"
@@ -407,8 +459,11 @@ public class CustomMovieProvider implements MovieProvider {
             return raw;
         }
         if (!pathImage.isEmpty()) {
-            String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
             String cleanPath = raw.startsWith("/") ? raw.substring(1) : raw;
+            if (!cleanPath.startsWith("upload") && cleanPath.indexOf('.') > 0 && cleanPath.indexOf('.') < cleanPath.indexOf('/')) {
+                return "https://" + cleanPath;
+            }
+            String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
             return prefix + cleanPath;
         }
         return fallback;
@@ -432,8 +487,11 @@ public class CustomMovieProvider implements MovieProvider {
             return chosen;
         }
         if (!pathImage.isEmpty()) {
-            String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
             String cleanPath = chosen.startsWith("/") ? chosen.substring(1) : chosen;
+            if (!cleanPath.startsWith("upload") && cleanPath.indexOf('.') > 0 && cleanPath.indexOf('.') < cleanPath.indexOf('/')) {
+                return "https://" + cleanPath;
+            }
+            String prefix = pathImage.endsWith("/") ? pathImage : pathImage + "/";
             return prefix + cleanPath;
         }
         return "https://vsmov.com/storage/images/" + (chosen.startsWith("/") ? chosen.substring(1) : chosen);

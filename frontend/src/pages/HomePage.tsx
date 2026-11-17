@@ -472,7 +472,9 @@ export function HomePage() {
                   onClick={() => setHeroIndex(idx)}
                   title={slide.movie.title}
                 >
-                  {slide.movie.poster && <img src={slide.movie.poster} alt={slide.movie.title} />}
+                  { (slide.movie.backdrop || slide.movie.poster) && (
+                    <img src={slide.movie.backdrop || slide.movie.poster} alt={slide.movie.title} />
+                  )}
                   <span className={`hero-thumb-dot ${slide.tag === 'viet-nam' ? 'vn' : ''}`} />
                 </button>
               ))}
